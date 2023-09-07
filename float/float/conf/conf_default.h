@@ -175,7 +175,7 @@
 
 // Return To Level Speed
 #ifndef APPCONF_FLOAT_TILTBACK_RETURN_SPEED
-#define APPCONF_FLOAT_TILTBACK_RETURN_SPEED 5
+#define APPCONF_FLOAT_TILTBACK_RETURN_SPEED 1
 #endif
 
 // Constant Tiltback
