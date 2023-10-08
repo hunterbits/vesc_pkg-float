@@ -583,7 +583,6 @@ static void reset_vars(data *d) {
 	// Feature: click on start
 	d->start_counter_clicks = d->start_counter_clicks_max;
 
-// fuck
 	// RC Move:
 	d->rc_steps = 0;
 	d->rc_current = 0;
@@ -616,7 +615,6 @@ static void check_odometer(data *d)
 /**
  *  do_rc_move: perform motor movement while board is idle
  */
-// fuck
 static void do_rc_move(data *d)
 {
 	if (d->rc_steps > 0) {
@@ -1151,7 +1149,6 @@ static void apply_noseangling(data *d){
 	d->setpoint += d->noseangling_interpolated;
 }
 
-// fuck
 static void apply_inputtilt(data *d){ // Input Tiltback
 	float input_tiltback_target;
 	 
@@ -1160,6 +1157,28 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 
 	// Invert for Darkride
 	input_tiltback_target *= (d->is_upside_down ? -1.0 : 1.0);
+
+	// // Default Behavior: Nose Tilt at any speed, does not invert for reverse (Safer for slow climbs/descents & jumps)
+	// // Alternate Behavior (Negative Tilt Speed): Nose Tilt only while moving, invert to match direction of travel
+	// if (balance_conf.roll_steer_erpm_kp < 0) {
+	// 	if (state == RUNNING_WHEELSLIP) {     // During wheelslip, setpoint drifts back to level for ERPM-based Input Tilt
+	// 		inputtilt_interpolated *= 0.995;  // to prevent chain reaction between setpoint and motor direction
+	// 	} else if (erpm <= -200){
+	// 		input_tiltback_target *= -1; // Invert angles for reverse
+	// 	} else if (erpm < 200){
+	// 		input_tiltback_target = 0; // Disable Input Tiltback at standstill to mitigate oscillations
+	// 	}
+	// }
+
+	// if (d->float_conf.roll_steer_erpm_kp >= 0 || d->state != RUNNING_WHEELSLIP) { // Pause and gradually decrease ERPM-based Input Tilt during wheelslip
+	// 	if (fabsf(input_tiltback_target - d->inputtilt_interpolated) < d->inputtilt_step_size){
+	// 		d->inputtilt_interpolated = input_tiltback_target;
+	// 	} else if (input_tiltback_target - d->inputtilt_interpolated > 0){
+	// 		d->inputtilt_interpolated += d->inputtilt_step_size;
+	// 	} else {
+	// 		d->inputtilt_interpolated -= d->inputtilt_step_size;
+	// 	}
+	// }
 
 	float input_tiltback_target_diff = input_tiltback_target - d->inputtilt_interpolated;
 
@@ -1193,33 +1212,6 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 	d->setpoint += d->inputtilt_interpolated;
 }
 
-// steve
-// a function that takes throttle_val and applies it to the acceleration of the board/increases erpm by increasing torque
-static void apply_inputthrottle(data *d) {
-// d->abs_erpm 
-// d->throttle_val
-// d->acceleration
-int torque_sign;
-	// Filter current (Biquad)
-	if (d->float_conf.atr_filter > 0) {
-		d->atr_filtered_current = biquad_process(&d->atr_current_biquad, d->motor_current);
-	} else {
-		d->atr_filtered_current = d->motor_current;
-	}
-
-	torque_sign = SIGN(d->atr_filtered_current);
-
-	if ((d->abs_erpm > 250) && (torque_sign != SIGN(d->erpm))) {
-		// current is negative, so we are braking or going downhill
-		// high currents downhill are less likely
-		d->braking = true;
-	}
-	else {
-		d->braking = false;
-	}
-}
-
-// fuck
 static void apply_torquetilt(data *d) {
 	float tt_step_size = 0;
 	float atr_step_size = 0;
@@ -1737,7 +1729,6 @@ static void float_thd(void *arg) {
 		}
 		d->duty_smooth = d->duty_smooth * 0.9 + d->duty_cycle * 0.1;
 
-// fuck
 		// UART/PPM Remote Throttle ///////////////////////
 		bool remote_connected = false;
 		float servo_val = 0;
@@ -2055,32 +2046,6 @@ static void float_thd(void *arg) {
 					d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 				}
 			}
-
-			// UART/PPM Remote Throttle ///////////////////////
-			bool remote_connected = false;
-			float servo_val = 0;
-
-			switch (d->float_conf.inputtilt_remote_type) {
-			case (INPUTTILT_PPM):
-				servo_val = VESC_IF->get_ppm();
-				remote_connected = VESC_IF->get_ppm_age() < 1;
-				break;
-			case (INPUTTILT_UART): ; // Don't delete ";", required to avoid compiler error with first line variable init
-				remote_state remote = VESC_IF->get_remote_state();
-				servo_val = remote.js_y;
-				remote_connected = remote.age_s < 1;
-				break;
-			case (INPUTTILT_NONE):
-				break;
-			}
-			
-			if (remote_connected) {
-				float scaled_throttle_val = servo_val * d->mc_current_max;
-				float blend_factor = 0.5; // adjust this to change the influence of the remote control
-				d->pid_value = blend_factor * scaled_throttle_val + (1 - blend_factor) * d->pid_value;
-			} 
-
-			///////////////////////////////////////////////////
 
 			// Output to motor
 			if (d->start_counter_clicks) {
