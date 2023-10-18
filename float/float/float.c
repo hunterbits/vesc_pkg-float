@@ -1194,30 +1194,21 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 }
 
 // steve
-// a function that takes throttle_val and applies it to the acceleration of the board/increases erpm by increasing torque
-static void apply_inputthrottle(data *d) {
 // d->abs_erpm 
 // d->throttle_val
 // d->acceleration
-int torque_sign;
-	// Filter current (Biquad)
-	if (d->float_conf.atr_filter > 0) {
-		d->atr_filtered_current = biquad_process(&d->atr_current_biquad, d->motor_current);
-	} else {
-		d->atr_filtered_current = d->motor_current;
-	}
 
-	torque_sign = SIGN(d->atr_filtered_current);
 
-	if ((d->abs_erpm > 250) && (torque_sign != SIGN(d->erpm))) {
-		// current is negative, so we are braking or going downhill
-		// high currents downhill are less likely
-		d->braking = true;
-	}
-	else {
-		d->braking = false;
-	}
-}
+// static void apply_throttle_to_acceleration(data *d) {
+// 	float torque_increase = d->throttle_val * d->float_conf.torque_multiplier;
+// 	d->acceleration += torque_increase;
+// 	d->abs_erpm += torque_increase * d->float_conf.erpm_per_torque;
+// }
+
+
+
+
+
 
 // fuck
 static void apply_torquetilt(data *d) {
@@ -1756,20 +1747,20 @@ static void float_thd(void *arg) {
 			break;
 		}
 		
-		if (!remote_connected) {
-			servo_val = 0;
-		} else {
-			// Apply Deadband
-			float deadband = d->float_conf.inputtilt_deadband;
-			if (fabsf(servo_val) < deadband) {
-				servo_val = 0.0;
-			} else {
-				servo_val = SIGN(servo_val) * (fabsf(servo_val) - deadband) / (1 - deadband);
-			}
+		// if (!remote_connected) {
+		// 	servo_val = 0;
+		// } else {
+		// 	// Apply Deadband
+		// 	float deadband = d->float_conf.inputtilt_deadband;
+		// 	if (fabsf(servo_val) < deadband) {
+		// 		servo_val = 0.0;
+		// 	} else {
+		// 		servo_val = SIGN(servo_val) * (fabsf(servo_val) - deadband) / (1 - deadband);
+		// 	}
 
-			// Invert Throttle
-			servo_val *= (d->float_conf.inputtilt_invert_throttle ? -1.0 : 1.0);
-		}
+		// 	// Invert Throttle
+		// 	servo_val *= (d->float_conf.inputtilt_invert_throttle ? -1.0 : 1.0);
+		// }
 
 		d->throttle_val = servo_val;
 		///////////////////////////////////////////////////
@@ -1878,7 +1869,8 @@ static void float_thd(void *arg) {
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 			add_surge(d);
-			apply_inputtilt(d); // Allow Input Tilt for Darkride
+			// apply_inputtilt(d);
+			// apply_throttle_to_acceleration(d) // Allow Input Tilt for Darkride
 			if (!d->is_upside_down) {
 				apply_noseangling(d);
 				apply_torquetilt(d);
@@ -2021,6 +2013,7 @@ static void float_thd(void *arg) {
 			if (fabsf(new_pid_value) > current_limit) {
 				new_pid_value = SIGN(new_pid_value) * current_limit;
 			}
+
 			else {
 				// Over continuous current for more than 3 seconds? Just beep, don't actually limit currents
 				if (fabsf(d->atr_filtered_current) < d->max_continuous_current) {
@@ -2036,7 +2029,11 @@ static void float_thd(void *arg) {
 					}
 				}
 			}
-			
+			 // and throttle val is positive
+			if (remote_connected && (d->throttle_val > 0) ) {
+				new_pid_value = d->throttle_val * current_limit; 
+			}
+			// } 
 			if (d->traction_control) {
 				// freewheel while traction loss is detected
 				d->pid_value = 0;
@@ -2074,11 +2071,11 @@ static void float_thd(void *arg) {
 				break;
 			}
 			
-			if (remote_connected) {
-				float scaled_throttle_val = servo_val * d->mc_current_max;
-				float blend_factor = 0.5; // adjust this to change the influence of the remote control
-				d->pid_value = blend_factor * scaled_throttle_val + (1 - blend_factor) * d->pid_value;
-			} 
+			// if (remote_connected) {
+			// 	float scaled_throttle_val = servo_val * d->mc_current_max;
+			// 	float blend_factor = 0.5; // adjust this to change the influence of the remote control
+			// 	d->pid_value = blend_factor * scaled_throttle_val + (1 - blend_factor) * d->pid_value;
+			// } 
 
 			///////////////////////////////////////////////////
 
