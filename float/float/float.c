@@ -2053,23 +2053,23 @@ static void float_thd(void *arg) {
 				}
 			}
 
-			// UART/PPM Remote Throttle ///////////////////////
-			bool remote_connected = false;
-			float servo_val = 0;
+			// // UART/PPM Remote Throttle ///////////////////////
+			// bool remote_connected = false;
+			// float servo_val = 0;
 
-			switch (d->float_conf.inputtilt_remote_type) {
-			case (INPUTTILT_PPM):
-				servo_val = VESC_IF->get_ppm();
-				remote_connected = VESC_IF->get_ppm_age() < 1;
-				break;
-			case (INPUTTILT_UART): ; // Don't delete ";", required to avoid compiler error with first line variable init
-				remote_state remote = VESC_IF->get_remote_state();
-				servo_val = remote.js_y;
-				remote_connected = remote.age_s < 1;
-				break;
-			case (INPUTTILT_NONE):
-				break;
-			}
+			// switch (d->float_conf.inputtilt_remote_type) {
+			// case (INPUTTILT_PPM):
+			// 	servo_val = VESC_IF->get_ppm();
+			// 	remote_connected = VESC_IF->get_ppm_age() < 1;
+			// 	break;
+			// case (INPUTTILT_UART): ; // Don't delete ";", required to avoid compiler error with first line variable init
+			// 	remote_state remote = VESC_IF->get_remote_state();
+			// 	servo_val = remote.js_y;
+			// 	remote_connected = remote.age_s < 1;
+			// 	break;
+			// case (INPUTTILT_NONE):
+			// 	break;
+			// }
 			
 			// if (remote_connected) {
 			// 	float scaled_throttle_val = servo_val * d->mc_current_max;
