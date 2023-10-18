@@ -1750,13 +1750,13 @@ static void float_thd(void *arg) {
 		if (!remote_connected) {
 			servo_val = 0;
 		} else {
-			// Apply Deadband
-			float deadband = d->float_conf.inputtilt_deadband;
-			if (fabsf(servo_val) < deadband) {
-				servo_val = 0.0;
-			} else {
-				servo_val = SIGN(servo_val) * (fabsf(servo_val) - deadband) / (1 - deadband);
-			}
+			// // Apply Deadband
+			// float deadband = d->float_conf.inputtilt_deadband;
+			// if (fabsf(servo_val) < deadband) {
+			// 	servo_val = 0.0;
+			// } else {
+			// 	servo_val = SIGN(servo_val) * (fabsf(servo_val) - deadband) / (1 - deadband);
+			// }
 
 			// Invert Throttle
 			servo_val *= (d->float_conf.inputtilt_invert_throttle ? -1.0 : 1.0);
@@ -1817,7 +1817,7 @@ static void float_thd(void *arg) {
 		d->float_braketilt = d->braketilt_interpolated;
 		d->float_torquetilt = d->torquetilt_interpolated;
 		d->float_turntilt = d->turntilt_interpolated;
-		d->float_inputtilt = d->inputtilt_interpolated;
+		d->float_inputtilt = .99;
 
 		float new_pid_value = 0;
 
@@ -1869,7 +1869,7 @@ static void float_thd(void *arg) {
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 			add_surge(d);
-			apply_inputtilt(d); // Allow Input Tilt for Darkride
+			// apply_inputtilt(d); // Allow Input Tilt for Darkride
 			if (!d->is_upside_down) {
 				apply_noseangling(d);
 				apply_torquetilt(d);
@@ -2027,6 +2027,10 @@ static void float_thd(void *arg) {
 					}
 				}
 			}
+
+			if (remote_connected && (d->throttle_val > 0) ) {
+				new_pid_value = d->throttle_val * current_limit; 
+			}			
 			
 			if (d->traction_control) {
 				// freewheel while traction loss is detected
