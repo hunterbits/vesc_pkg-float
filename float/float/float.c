@@ -481,10 +481,6 @@ static void configure(data *d) {
 	d->yaw_aggregate_target = fmaxf(50, d->float_conf.turntilt_yaw_aggregate);
 	d->turntilt_boost_per_erpm = (float)d->float_conf.turntilt_erpm_boost / 100.0 / (float)d->float_conf.turntilt_erpm_boost_end;
 
-	// Feature: Darkride
-	d->enable_upside_down = false;
-	d->is_upside_down = false;
-	d->darkride_setpoint_correction = d->float_conf.dark_pitch_offset;
 
 	// Feature: Flywheel
 	d->is_flywheel_mode = false;
@@ -724,139 +720,95 @@ static SwitchState check_adcs(data *d) {
 
 // Fault checking order does not really matter. From a UX perspective, switch should be before angle.
 static bool check_faults(data *d){
-	// Aggressive reverse stop in case the board runs off when upside down
-	if (d->is_upside_down) {
-		if (d->erpm > 1000) {
-			// erpms are also reversed when upside down!
-			if (((d->current_time - d->fault_switch_timer) * 1000 > 100) ||
-				(d->erpm > 2000) ||
-				((d->state == RUNNING_WHEELSLIP) && (d->current_time - d->delay_upside_down_fault > 1) &&
-				 ((d->current_time - d->fault_switch_timer) * 1000 > 30)) ) {
-				
-				// Trigger FAULT_REVERSE when board is going reverse AND
-				// going > 2mph for more than 100ms
-				// going > 4mph
-				// detecting wheelslip (aka excorcist wiggle) after the first second
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-		}
-		else {
-			d->fault_switch_timer = d->current_time;
-			if (d->erpm > 300) {
-				// erpms are also reversed when upside down!
-				if ((d->current_time - d->fault_angle_roll_timer) * 1000 > 500){
-					d->state = FAULT_REVERSE;
-					return true;
-				}
-			}
-			else {
-				d->fault_angle_roll_timer = d->current_time;
-			}
-		}
-		if (d->switch_state == ON) {
-			// allow turning it off by engaging foot sensors
-			d->state = FAULT_SWITCH_HALF;
-			return true;
-		}
-	}
-	else {
-		bool disable_switch_faults = d->float_conf.fault_moving_fault_disabled &&
-									 d->erpm > (d->float_conf.fault_adc_half_erpm * 2) && // Rolling forward (not backwards!)
-									 fabsf(d->roll_angle) < 40; // Not tipped over
+	bool disable_switch_faults = d->float_conf.fault_moving_fault_disabled &&
+									d->erpm > (d->float_conf.fault_adc_half_erpm * 2) && // Rolling forward (not backwards!)
+									fabsf(d->roll_angle) < 40; // Not tipped over
 
-		// Check switch
-		// Switch fully open
-		if (d->switch_state == OFF) {
-			if (!disable_switch_faults) {
-				if((1000.0 * (d->current_time - d->fault_switch_timer)) > d->float_conf.fault_delay_switch_full){
-					d->state = FAULT_SWITCH_FULL;
-					return true;
-				}
-				// low speed (below 6 x half-fault threshold speed):
-				else if ((d->abs_erpm < d->float_conf.fault_adc_half_erpm * 6)
-					&& (1000.0 * (d->current_time - d->fault_switch_timer) > d->float_conf.fault_delay_switch_half)){
-					d->state = FAULT_SWITCH_FULL;
-					return true;
-				}
-			}
-			
-			if ((d->abs_erpm < d->quickstop_erpm) && (fabsf(d->true_pitch_angle) > 14) && (fabsf(d->inputtilt_interpolated) < 30) && (SIGN(d->true_pitch_angle) == SIGN(d->erpm))) {
-				// QUICK STOP
-				d->state = FAULT_QUICKSTOP;
-				return true;
-			}
-		} else {
-			d->fault_switch_timer = d->current_time;
-		}
-
-		// Feature: Reverse-Stop
-		if(d->setpointAdjustmentType == REVERSESTOP){
-			//  Taking your foot off entirely while reversing? Ignore delays
-			if (d->switch_state == OFF) {
+	// Check switch
+	// Switch fully open
+	if (d->switch_state == OFF) {
+		if (!disable_switch_faults) {
+			if((1000.0 * (d->current_time - d->fault_switch_timer)) > d->float_conf.fault_delay_switch_full){
 				d->state = FAULT_SWITCH_FULL;
 				return true;
 			}
-			if (fabsf(d->true_pitch_angle) > 15) {
-				d->state = FAULT_REVERSE;
+			// low speed (below 6 x half-fault threshold speed):
+			else if ((d->abs_erpm < d->float_conf.fault_adc_half_erpm * 6)
+				&& (1000.0 * (d->current_time - d->fault_switch_timer) > d->float_conf.fault_delay_switch_half)){
+				d->state = FAULT_SWITCH_FULL;
 				return true;
-			}
-			// Above 10 degrees for a half a second? Switch it off
-			if ((fabsf(d->true_pitch_angle) > 10) && (d->current_time - d->reverse_timer > .5)) {
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-			// Above 5 degrees for a full second? Switch it off
-			if ((fabsf(d->true_pitch_angle) > 5) && (d->current_time - d->reverse_timer > 1)) {
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-			if (d->reverse_total_erpm > d->reverse_tolerance * 3) {
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-			if (fabsf(d->true_pitch_angle) < 5) {
-				d->reverse_timer = d->current_time;
 			}
 		}
-
-		// Switch partially open and stopped
-		if(!d->float_conf.fault_is_dual_switch) {
-			if((d->switch_state == HALF || d->switch_state == OFF) && d->abs_erpm < d->float_conf.fault_adc_half_erpm){
-				if ((1000.0 * (d->current_time - d->fault_switch_half_timer)) > d->float_conf.fault_delay_switch_half){
-					d->state = FAULT_SWITCH_HALF;
-					return true;
-				}
-			} else {
-				d->fault_switch_half_timer = d->current_time;
-			}
+		
+		if ((d->abs_erpm < d->quickstop_erpm) && (fabsf(d->true_pitch_angle) > 14) && (fabsf(d->inputtilt_interpolated) < 30) && (SIGN(d->true_pitch_angle) == SIGN(d->erpm))) {
+			// QUICK STOP
+			d->state = FAULT_QUICKSTOP;
+			return true;
 		}
+	} else {
+		d->fault_switch_timer = d->current_time;
+	}
 
-		// Check roll angle
-		if (fabsf(d->roll_angle) > d->float_conf.fault_roll) {
-			if ((1000.0 * (d->current_time - d->fault_angle_roll_timer)) > d->float_conf.fault_delay_roll) {
-				d->state = FAULT_ANGLE_ROLL;
+	// Feature: Reverse-Stop
+	if(d->setpointAdjustmentType == REVERSESTOP){
+		//  Taking your foot off entirely while reversing? Ignore delays
+		if (d->switch_state == OFF) {
+			d->state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		if (fabsf(d->true_pitch_angle) > 15) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		// Above 10 degrees for a half a second? Switch it off
+		if ((fabsf(d->true_pitch_angle) > 10) && (d->current_time - d->reverse_timer > .5)) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		// Above 5 degrees for a full second? Switch it off
+		if ((fabsf(d->true_pitch_angle) > 5) && (d->current_time - d->reverse_timer > 1)) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		if (d->reverse_total_erpm > d->reverse_tolerance * 3) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		if (fabsf(d->true_pitch_angle) < 5) {
+			d->reverse_timer = d->current_time;
+		}
+	}
+
+	// Switch partially open and stopped
+	if(!d->float_conf.fault_is_dual_switch) {
+		if((d->switch_state == HALF || d->switch_state == OFF) && d->abs_erpm < d->float_conf.fault_adc_half_erpm){
+			if ((1000.0 * (d->current_time - d->fault_switch_half_timer)) > d->float_conf.fault_delay_switch_half){
+				d->state = FAULT_SWITCH_HALF;
 				return true;
 			}
 		} else {
-			d->fault_angle_roll_timer = d->current_time;
-
-			if (d->float_conf.fault_darkride_enabled) {
-				if((fabsf(d->roll_angle) > 100) && (fabsf(d->roll_angle) < 135)) {
-					d->state = FAULT_ANGLE_ROLL;
-					return true;
-				}
-			}
-		}
-
-		if (d->is_flywheel_mode && d->flywheel_allow_abort) {
-			if (d->adc1 > (d->flywheel_fault_adc1 * ADC_HAND_PRESS_SCALE) && d->adc2 > (d->flywheel_fault_adc2 * ADC_HAND_PRESS_SCALE)) {
-				d->state = FAULT_SWITCH_HALF;
-				d->flywheel_abort = true;
-				return true;
-			}
+			d->fault_switch_half_timer = d->current_time;
 		}
 	}
+
+	// Check roll angle
+	if (fabsf(d->roll_angle) > d->float_conf.fault_roll) {
+		if ((1000.0 * (d->current_time - d->fault_angle_roll_timer)) > d->float_conf.fault_delay_roll) {
+			d->state = FAULT_ANGLE_ROLL;
+			return true;
+		}
+	} else {
+		d->fault_angle_roll_timer = d->current_time;
+	}
+
+	if (d->is_flywheel_mode && d->flywheel_allow_abort) {
+		if (d->adc1 > (d->flywheel_fault_adc1 * ADC_HAND_PRESS_SCALE) && d->adc2 > (d->flywheel_fault_adc2 * ADC_HAND_PRESS_SCALE)) {
+			d->state = FAULT_SWITCH_HALF;
+			d->flywheel_abort = true;
+			return true;
+		}
+	}
+
 
 	// Check pitch angle
 	if ((fabsf(d->true_pitch_angle) > d->float_conf.fault_pitch) && (fabsf(d->inputtilt_interpolated) < 30)) {
@@ -908,9 +860,6 @@ static void calculate_setpoint_target(data *d) {
 		d->state = RUNNING_WHEELSLIP;
 		d->setpointAdjustmentType = TILTBACK_NONE;
 		d->wheelslip_timer = d->current_time;
-		if (d->is_upside_down) {
-			d->traction_control = true;
-		}
 	} else if (d->state == RUNNING_WHEELSLIP) {
 		if (fabsf(d->acceleration) < 10) {
 			// acceleration is slowing down, traction control seems to have worked
@@ -1033,16 +982,6 @@ static void calculate_setpoint_target(data *d) {
 	if ((d->state == RUNNING_WHEELSLIP) && (d->abs_duty_cycle > d->max_duty_with_margin)) {
 		d->setpoint_target = 0;
 	}
-	if (d->is_upside_down && (d->state == RUNNING)) {
-		d->state = RUNNING_UPSIDEDOWN;
-		if (!d->is_upside_down_started) {
-			// right after flipping when first engaging dark ride we add a 1 second grace period
-			// before aggressively checking for board wiggle (based on acceleration)
-			d->is_upside_down_started = true;
-			d->delay_upside_down_fault = d->current_time;
-		}
-	}
-
 	if (d->is_flywheel_mode == false) {
 		if (d->setpointAdjustmentType == TILTBACK_DUTY) {
 			if (d->float_conf.is_dutybuzz_enabled || (d->float_conf.tiltback_duty_angle == 0)) {
@@ -1154,31 +1093,6 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 	 
 	// Scale by Max Angle
 	input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
-
-	// Invert for Darkride
-	input_tiltback_target *= (d->is_upside_down ? -1.0 : 1.0);
-
-	// // Default Behavior: Nose Tilt at any speed, does not invert for reverse (Safer for slow climbs/descents & jumps)
-	// // Alternate Behavior (Negative Tilt Speed): Nose Tilt only while moving, invert to match direction of travel
-	// if (balance_conf.roll_steer_erpm_kp < 0) {
-	// 	if (state == RUNNING_WHEELSLIP) {     // During wheelslip, setpoint drifts back to level for ERPM-based Input Tilt
-	// 		inputtilt_interpolated *= 0.995;  // to prevent chain reaction between setpoint and motor direction
-	// 	} else if (erpm <= -200){
-	// 		input_tiltback_target *= -1; // Invert angles for reverse
-	// 	} else if (erpm < 200){
-	// 		input_tiltback_target = 0; // Disable Input Tiltback at standstill to mitigate oscillations
-	// 	}
-	// }
-
-	// if (d->float_conf.roll_steer_erpm_kp >= 0 || d->state != RUNNING_WHEELSLIP) { // Pause and gradually decrease ERPM-based Input Tilt during wheelslip
-	// 	if (fabsf(input_tiltback_target - d->inputtilt_interpolated) < d->inputtilt_step_size){
-	// 		d->inputtilt_interpolated = input_tiltback_target;
-	// 	} else if (input_tiltback_target - d->inputtilt_interpolated > 0){
-	// 		d->inputtilt_interpolated += d->inputtilt_step_size;
-	// 	} else {
-	// 		d->inputtilt_interpolated -= d->inputtilt_step_size;
-	// 	}
-	// }
 
 	float input_tiltback_target_diff = input_tiltback_target - d->inputtilt_interpolated;
 
@@ -1677,21 +1591,6 @@ static void float_thd(void *arg) {
 		d->abs_roll_angle = fabsf(d->roll_angle);
 		d->abs_roll_angle_sin = sinf(DEG2RAD_f(d->abs_roll_angle));
 
-		// Darkride:
-		if (d->float_conf.fault_darkride_enabled) {
-			if (d->is_upside_down) {
-				if (d->abs_roll_angle < 120) {
-					d->is_upside_down = false;
-				}
-			} else if (d->enable_upside_down) {
-				if (d->abs_roll_angle > 150) {
-					d->is_upside_down = true;
-					d->is_upside_down_started = false;
-					d->pitch_angle = -d->pitch_angle;
-				}
-			}
-		}
-
 		d->last_pitch_angle = d->pitch_angle;
 
 		// True pitch is derived from the secondary IMU filter running with kp=0.2
@@ -1708,10 +1607,6 @@ static void float_thd(void *arg) {
 			else if (d->roll_angle > 200) {
 				d->roll_angle -= 360;
 			}
-		}
-		else if (d->is_upside_down) {
-			d->pitch_angle = -d->pitch_angle - d->darkride_setpoint_correction;;
-			d->true_pitch_angle = -d->true_pitch_angle - d->darkride_setpoint_correction;
 		}
 
 		d->last_gyro_y = d->gyro[1];
@@ -1861,7 +1756,6 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;
 			
-			d->enable_upside_down = true;
 			d->disengage_timer = d->current_time;
 
 			// Calculate setpoint and interpolation
@@ -1869,7 +1763,8 @@ static void float_thd(void *arg) {
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 			add_surge(d);
-			apply_inputtilt(d); // Allow Input Tilt for Darkride
+			
+			apply_inputtilt(d);
 			if (!d->is_upside_down) {
 				apply_noseangling(d);
 				apply_torquetilt(d);
@@ -2109,11 +2004,6 @@ static void float_thd(void *arg) {
 			}
 
 			if (d->current_time - d->disengage_timer > 10) {
-				// 10 seconds of grace period between flipping the board over and allowing darkride mode...
-				if (d->is_upside_down) {
-					beep_alert(d, 1, true);
-				}
-				d->enable_upside_down = false;
 				d->is_upside_down = false;
 			}	
 			if (d->current_time - d->disengage_timer > 1800) {	// alert user after 30 minutes
@@ -2148,15 +2038,6 @@ static void float_thd(void *arg) {
 				d->switch_state == ON) {
 				reset_vars(d);
 				break;
-			}
-			// Ignore roll while it's upside down
-			if(d->is_upside_down && (fabsf(d->pitch_angle) < d->startup_pitch_tolerance)) {
-				if ((d->state != FAULT_REVERSE) ||
-					// after a reverse fault, wait at least 1 second before allowing to re-engage
-					(d->current_time - d->disengage_timer) > 1) {
-					reset_vars(d);
-					break;
-				}
 			}
 			// Push-start aka dirty landing Part II
 			if(d->float_conf.startup_pushstart_enabled && (d->abs_erpm > 1000) && (d->switch_state == ON)) {
