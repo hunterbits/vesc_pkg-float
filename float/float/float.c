@@ -197,6 +197,7 @@ typedef struct {
 	float switch_warn_buzz_erpm;
 	float quickstop_erpm;
 	bool traction_control;
+	float desired_current;
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -481,10 +482,6 @@ static void configure(data *d) {
 	d->yaw_aggregate_target = fmaxf(50, d->float_conf.turntilt_yaw_aggregate);
 	d->turntilt_boost_per_erpm = (float)d->float_conf.turntilt_erpm_boost / 100.0 / (float)d->float_conf.turntilt_erpm_boost_end;
 
-	// Feature: Darkride
-	d->enable_upside_down = false;
-	d->is_upside_down = false;
-	d->darkride_setpoint_correction = d->float_conf.dark_pitch_offset;
 
 	// Feature: Flywheel
 	d->is_flywheel_mode = false;
@@ -724,139 +721,95 @@ static SwitchState check_adcs(data *d) {
 
 // Fault checking order does not really matter. From a UX perspective, switch should be before angle.
 static bool check_faults(data *d){
-	// Aggressive reverse stop in case the board runs off when upside down
-	if (d->is_upside_down) {
-		if (d->erpm > 1000) {
-			// erpms are also reversed when upside down!
-			if (((d->current_time - d->fault_switch_timer) * 1000 > 100) ||
-				(d->erpm > 2000) ||
-				((d->state == RUNNING_WHEELSLIP) && (d->current_time - d->delay_upside_down_fault > 1) &&
-				 ((d->current_time - d->fault_switch_timer) * 1000 > 30)) ) {
-				
-				// Trigger FAULT_REVERSE when board is going reverse AND
-				// going > 2mph for more than 100ms
-				// going > 4mph
-				// detecting wheelslip (aka excorcist wiggle) after the first second
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-		}
-		else {
-			d->fault_switch_timer = d->current_time;
-			if (d->erpm > 300) {
-				// erpms are also reversed when upside down!
-				if ((d->current_time - d->fault_angle_roll_timer) * 1000 > 500){
-					d->state = FAULT_REVERSE;
-					return true;
-				}
-			}
-			else {
-				d->fault_angle_roll_timer = d->current_time;
-			}
-		}
-		if (d->switch_state == ON) {
-			// allow turning it off by engaging foot sensors
-			d->state = FAULT_SWITCH_HALF;
-			return true;
-		}
-	}
-	else {
-		bool disable_switch_faults = d->float_conf.fault_moving_fault_disabled &&
-									 d->erpm > (d->float_conf.fault_adc_half_erpm * 2) && // Rolling forward (not backwards!)
-									 fabsf(d->roll_angle) < 40; // Not tipped over
+	bool disable_switch_faults = d->float_conf.fault_moving_fault_disabled &&
+									d->erpm > (d->float_conf.fault_adc_half_erpm * 2) && // Rolling forward (not backwards!)
+									fabsf(d->roll_angle) < 40; // Not tipped over
 
-		// Check switch
-		// Switch fully open
-		if (d->switch_state == OFF) {
-			if (!disable_switch_faults) {
-				if((1000.0 * (d->current_time - d->fault_switch_timer)) > d->float_conf.fault_delay_switch_full){
-					d->state = FAULT_SWITCH_FULL;
-					return true;
-				}
-				// low speed (below 6 x half-fault threshold speed):
-				else if ((d->abs_erpm < d->float_conf.fault_adc_half_erpm * 6)
-					&& (1000.0 * (d->current_time - d->fault_switch_timer) > d->float_conf.fault_delay_switch_half)){
-					d->state = FAULT_SWITCH_FULL;
-					return true;
-				}
-			}
-			
-			if ((d->abs_erpm < d->quickstop_erpm) && (fabsf(d->true_pitch_angle) > 14) && (fabsf(d->inputtilt_interpolated) < 30) && (SIGN(d->true_pitch_angle) == SIGN(d->erpm))) {
-				// QUICK STOP
-				d->state = FAULT_QUICKSTOP;
-				return true;
-			}
-		} else {
-			d->fault_switch_timer = d->current_time;
-		}
-
-		// Feature: Reverse-Stop
-		if(d->setpointAdjustmentType == REVERSESTOP){
-			//  Taking your foot off entirely while reversing? Ignore delays
-			if (d->switch_state == OFF) {
+	// Check switch
+	// Switch fully open
+	if (d->switch_state == OFF) {
+		if (!disable_switch_faults) {
+			if((1000.0 * (d->current_time - d->fault_switch_timer)) > d->float_conf.fault_delay_switch_full){
 				d->state = FAULT_SWITCH_FULL;
 				return true;
 			}
-			if (fabsf(d->true_pitch_angle) > 15) {
-				d->state = FAULT_REVERSE;
+			// low speed (below 6 x half-fault threshold speed):
+			else if ((d->abs_erpm < d->float_conf.fault_adc_half_erpm * 6)
+				&& (1000.0 * (d->current_time - d->fault_switch_timer) > d->float_conf.fault_delay_switch_half)){
+				d->state = FAULT_SWITCH_FULL;
 				return true;
-			}
-			// Above 10 degrees for a half a second? Switch it off
-			if ((fabsf(d->true_pitch_angle) > 10) && (d->current_time - d->reverse_timer > .5)) {
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-			// Above 5 degrees for a full second? Switch it off
-			if ((fabsf(d->true_pitch_angle) > 5) && (d->current_time - d->reverse_timer > 1)) {
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-			if (d->reverse_total_erpm > d->reverse_tolerance * 3) {
-				d->state = FAULT_REVERSE;
-				return true;
-			}
-			if (fabsf(d->true_pitch_angle) < 5) {
-				d->reverse_timer = d->current_time;
 			}
 		}
-
-		// Switch partially open and stopped
-		if(!d->float_conf.fault_is_dual_switch) {
-			if((d->switch_state == HALF || d->switch_state == OFF) && d->abs_erpm < d->float_conf.fault_adc_half_erpm){
-				if ((1000.0 * (d->current_time - d->fault_switch_half_timer)) > d->float_conf.fault_delay_switch_half){
-					d->state = FAULT_SWITCH_HALF;
-					return true;
-				}
-			} else {
-				d->fault_switch_half_timer = d->current_time;
-			}
+		
+		if ((d->abs_erpm < d->quickstop_erpm) && (fabsf(d->true_pitch_angle) > 14) && (fabsf(d->inputtilt_interpolated) < 30) && (SIGN(d->true_pitch_angle) == SIGN(d->erpm))) {
+			// QUICK STOP
+			d->state = FAULT_QUICKSTOP;
+			return true;
 		}
+	} else {
+		d->fault_switch_timer = d->current_time;
+	}
 
-		// Check roll angle
-		if (fabsf(d->roll_angle) > d->float_conf.fault_roll) {
-			if ((1000.0 * (d->current_time - d->fault_angle_roll_timer)) > d->float_conf.fault_delay_roll) {
-				d->state = FAULT_ANGLE_ROLL;
+	// Feature: Reverse-Stop
+	if(d->setpointAdjustmentType == REVERSESTOP){
+		//  Taking your foot off entirely while reversing? Ignore delays
+		if (d->switch_state == OFF) {
+			d->state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		if (fabsf(d->true_pitch_angle) > 15) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		// Above 10 degrees for a half a second? Switch it off
+		if ((fabsf(d->true_pitch_angle) > 10) && (d->current_time - d->reverse_timer > .5)) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		// Above 5 degrees for a full second? Switch it off
+		if ((fabsf(d->true_pitch_angle) > 5) && (d->current_time - d->reverse_timer > 1)) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		if (d->reverse_total_erpm > d->reverse_tolerance * 3) {
+			d->state = FAULT_REVERSE;
+			return true;
+		}
+		if (fabsf(d->true_pitch_angle) < 5) {
+			d->reverse_timer = d->current_time;
+		}
+	}
+
+	// Switch partially open and stopped
+	if(!d->float_conf.fault_is_dual_switch) {
+		if((d->switch_state == HALF || d->switch_state == OFF) && d->abs_erpm < d->float_conf.fault_adc_half_erpm){
+			if ((1000.0 * (d->current_time - d->fault_switch_half_timer)) > d->float_conf.fault_delay_switch_half){
+				d->state = FAULT_SWITCH_HALF;
 				return true;
 			}
 		} else {
-			d->fault_angle_roll_timer = d->current_time;
-
-			if (d->float_conf.fault_darkride_enabled) {
-				if((fabsf(d->roll_angle) > 100) && (fabsf(d->roll_angle) < 135)) {
-					d->state = FAULT_ANGLE_ROLL;
-					return true;
-				}
-			}
-		}
-
-		if (d->is_flywheel_mode && d->flywheel_allow_abort) {
-			if (d->adc1 > (d->flywheel_fault_adc1 * ADC_HAND_PRESS_SCALE) && d->adc2 > (d->flywheel_fault_adc2 * ADC_HAND_PRESS_SCALE)) {
-				d->state = FAULT_SWITCH_HALF;
-				d->flywheel_abort = true;
-				return true;
-			}
+			d->fault_switch_half_timer = d->current_time;
 		}
 	}
+
+	// Check roll angle
+	if (fabsf(d->roll_angle) > d->float_conf.fault_roll) {
+		if ((1000.0 * (d->current_time - d->fault_angle_roll_timer)) > d->float_conf.fault_delay_roll) {
+			d->state = FAULT_ANGLE_ROLL;
+			return true;
+		}
+	} else {
+		d->fault_angle_roll_timer = d->current_time;
+	}
+
+	if (d->is_flywheel_mode && d->flywheel_allow_abort) {
+		if (d->adc1 > (d->flywheel_fault_adc1 * ADC_HAND_PRESS_SCALE) && d->adc2 > (d->flywheel_fault_adc2 * ADC_HAND_PRESS_SCALE)) {
+			d->state = FAULT_SWITCH_HALF;
+			d->flywheel_abort = true;
+			return true;
+		}
+	}
+
 
 	// Check pitch angle
 	if ((fabsf(d->true_pitch_angle) > d->float_conf.fault_pitch) && (fabsf(d->inputtilt_interpolated) < 30)) {
@@ -908,9 +861,6 @@ static void calculate_setpoint_target(data *d) {
 		d->state = RUNNING_WHEELSLIP;
 		d->setpointAdjustmentType = TILTBACK_NONE;
 		d->wheelslip_timer = d->current_time;
-		if (d->is_upside_down) {
-			d->traction_control = true;
-		}
 	} else if (d->state == RUNNING_WHEELSLIP) {
 		if (fabsf(d->acceleration) < 10) {
 			// acceleration is slowing down, traction control seems to have worked
@@ -1033,16 +983,6 @@ static void calculate_setpoint_target(data *d) {
 	if ((d->state == RUNNING_WHEELSLIP) && (d->abs_duty_cycle > d->max_duty_with_margin)) {
 		d->setpoint_target = 0;
 	}
-	if (d->is_upside_down && (d->state == RUNNING)) {
-		d->state = RUNNING_UPSIDEDOWN;
-		if (!d->is_upside_down_started) {
-			// right after flipping when first engaging dark ride we add a 1 second grace period
-			// before aggressively checking for board wiggle (based on acceleration)
-			d->is_upside_down_started = true;
-			d->delay_upside_down_fault = d->current_time;
-		}
-	}
-
 	if (d->is_flywheel_mode == false) {
 		if (d->setpointAdjustmentType == TILTBACK_DUTY) {
 			if (d->float_conf.is_dutybuzz_enabled || (d->float_conf.tiltback_duty_angle == 0)) {
@@ -1154,31 +1094,6 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 	 
 	// Scale by Max Angle
 	input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
-
-	// Invert for Darkride
-	input_tiltback_target *= (d->is_upside_down ? -1.0 : 1.0);
-
-	// // Default Behavior: Nose Tilt at any speed, does not invert for reverse (Safer for slow climbs/descents & jumps)
-	// // Alternate Behavior (Negative Tilt Speed): Nose Tilt only while moving, invert to match direction of travel
-	// if (balance_conf.roll_steer_erpm_kp < 0) {
-	// 	if (state == RUNNING_WHEELSLIP) {     // During wheelslip, setpoint drifts back to level for ERPM-based Input Tilt
-	// 		inputtilt_interpolated *= 0.995;  // to prevent chain reaction between setpoint and motor direction
-	// 	} else if (erpm <= -200){
-	// 		input_tiltback_target *= -1; // Invert angles for reverse
-	// 	} else if (erpm < 200){
-	// 		input_tiltback_target = 0; // Disable Input Tiltback at standstill to mitigate oscillations
-	// 	}
-	// }
-
-	// if (d->float_conf.roll_steer_erpm_kp >= 0 || d->state != RUNNING_WHEELSLIP) { // Pause and gradually decrease ERPM-based Input Tilt during wheelslip
-	// 	if (fabsf(input_tiltback_target - d->inputtilt_interpolated) < d->inputtilt_step_size){
-	// 		d->inputtilt_interpolated = input_tiltback_target;
-	// 	} else if (input_tiltback_target - d->inputtilt_interpolated > 0){
-	// 		d->inputtilt_interpolated += d->inputtilt_step_size;
-	// 	} else {
-	// 		d->inputtilt_interpolated -= d->inputtilt_step_size;
-	// 	}
-	// }
 
 	float input_tiltback_target_diff = input_tiltback_target - d->inputtilt_interpolated;
 
@@ -1647,6 +1562,76 @@ static void imu_ref_callback(float *acc, float *gyro, float *mag, float dt) {
 	VESC_IF->ahrs_update_mahony_imu(gyro, acc, dt, &d->m_att_ref);
 }
 
+float limit_current(float new_pid_value, data *d) {
+    float current_limit;
+    if (d->braking) {
+        current_limit = d->mc_current_min * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+    }
+    else {
+        current_limit = d->mc_current_max * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+    }
+
+    if (fabsf(new_pid_value) > current_limit) {
+        new_pid_value = SIGN(new_pid_value) * current_limit;
+    }
+    else {
+        // Over continuous current for more than 3 seconds? Just beep, don't actually limit currents
+        if (fabsf(d->atr_filtered_current) < d->max_continuous_current) {
+            d->overcurrent_timer = d->current_time;
+            if (d->current_beeping) {
+                d->current_beeping = false;
+                beep_off(d, false);
+            }
+        } else {
+            if (d->current_time - d->overcurrent_timer > 3) {
+                beep_on(d, true);
+                d->current_beeping = true;
+            }
+        }
+    }
+    return new_pid_value;
+}
+
+void prepare_brake_scaling(data *d) {
+    if (fabsf(d->erpm) < 500) { // Nearly standstill
+        d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // All scaling should roll back to 1.0x when near a stop for a smooth stand-still and back-forth transition
+        d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
+    } else if (d->erpm > 0){ // Moving forwards
+        d->kp_brake_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_brake_scale; // Once rolling forward, brakes should transition to scaled values
+        d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
+    } else { // Moving backwards
+        d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // Once rolling backward, the NEW brakes (we will use kp_accel) should transition to scaled values
+        d->kp_accel_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_accel_scale;
+    }
+}
+
+float calculate_pid_value(data *d) {
+    // Resume real PID maths
+    d->pid_integral = d->pid_integral + d->proportional * d->float_conf.ki;
+
+    // Apply I term Filter
+    if (d->float_conf.ki_limit > 0 && fabsf(d->pid_integral) > d->float_conf.ki_limit) {
+        d->pid_integral = d->float_conf.ki_limit * SIGN(d->pid_integral);
+    }
+    // Quickly ramp down integral component during reverse stop
+    if (d->setpointAdjustmentType == REVERSESTOP) {
+        d->pid_integral = d->pid_integral * 0.9;
+    }
+
+    // Apply P Brake Scaling
+    float scaled_kp;
+    if (d->proportional < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
+        scaled_kp = d->float_conf.kp * d->kp_brake_scale;
+    } else {
+        scaled_kp = d->float_conf.kp * d->kp_accel_scale;
+    }
+
+    d->pid_prop = scaled_kp * d->proportional;
+    float new_pid_value = d->pid_prop + d->pid_integral;
+
+    return new_pid_value;
+}
+
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
 
@@ -1677,21 +1662,6 @@ static void float_thd(void *arg) {
 		d->abs_roll_angle = fabsf(d->roll_angle);
 		d->abs_roll_angle_sin = sinf(DEG2RAD_f(d->abs_roll_angle));
 
-		// Darkride:
-		if (d->float_conf.fault_darkride_enabled) {
-			if (d->is_upside_down) {
-				if (d->abs_roll_angle < 120) {
-					d->is_upside_down = false;
-				}
-			} else if (d->enable_upside_down) {
-				if (d->abs_roll_angle > 150) {
-					d->is_upside_down = true;
-					d->is_upside_down_started = false;
-					d->pitch_angle = -d->pitch_angle;
-				}
-			}
-		}
-
 		d->last_pitch_angle = d->pitch_angle;
 
 		// True pitch is derived from the secondary IMU filter running with kp=0.2
@@ -1708,10 +1678,6 @@ static void float_thd(void *arg) {
 			else if (d->roll_angle > 200) {
 				d->roll_angle -= 360;
 			}
-		}
-		else if (d->is_upside_down) {
-			d->pitch_angle = -d->pitch_angle - d->darkride_setpoint_correction;;
-			d->true_pitch_angle = -d->true_pitch_angle - d->darkride_setpoint_correction;
 		}
 
 		d->last_gyro_y = d->gyro[1];
@@ -1852,213 +1818,48 @@ static void float_thd(void *arg) {
 		case (RUNNING_FLYWHEEL):
 			// Check for faults
 			if (check_faults(d)) {
-				if ((d->state == FAULT_SWITCH_FULL) && !d->is_upside_down) {
+				if ((d->state == FAULT_SWITCH_FULL)) {
 					// dirty landings: add extra margin when rightside up
 					d->startup_pitch_tolerance = d->float_conf.startup_pitch_tolerance + d->startup_pitch_trickmargin;
 					d->fault_angle_pitch_timer = d->current_time;
 				}
 				break;
 			}
-			d->odometer_dirty = 1;
-			
-			d->enable_upside_down = true;
+			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
 
 			// Calculate setpoint and interpolation
 			calculate_setpoint_target(d);
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
-			add_surge(d);
-			apply_inputtilt(d); // Allow Input Tilt for Darkride
-			if (!d->is_upside_down) {
-				apply_noseangling(d);
-				apply_torquetilt(d);
-				apply_turntilt(d);
-			}
 
-			// Prepare Brake Scaling (ramp scale values as needed for smooth transitions)
-			if (fabsf(d->erpm) < 500) { // Nearly standstill
-				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // All scaling should roll back to 1.0x when near a stop for a smooth stand-still and back-forth transition
-				d->kp2_brake_scale = 0.01 + 0.99 * d->kp2_brake_scale;
-				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
-				d->kp2_accel_scale = 0.01 + 0.99 * d->kp2_accel_scale;
-
-			} else if (d->erpm > 0){ // Moving forwards
-				d->kp_brake_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_brake_scale; // Once rolling forward, brakes should transition to scaled values
-				d->kp2_brake_scale = 0.01 * d->float_conf.kp2_brake + 0.99 * d->kp2_brake_scale;
-				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
-				d->kp2_accel_scale = 0.01 + 0.99 * d->kp2_accel_scale;
-
-			} else { // Moving backwards
-				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // Once rolling backward, the NEW brakes (we will use kp_accel) should transition to scaled values
-				d->kp2_brake_scale = 0.01 + 0.99 * d->kp2_brake_scale;
-				d->kp_accel_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_accel_scale;
-				d->kp2_accel_scale = 0.01 * d->float_conf.kp2_brake + 0.99 * d->kp2_accel_scale;
-			}
+			prepare_brake_scaling(d);
 
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
-			bool tail_down = SIGN(d->proportional) != SIGN(d->erpm);
 
-			// Resume real PID maths
-			d->pid_integral = d->pid_integral + d->proportional * d->float_conf.ki;
-
-			// Apply I term Filter
-			if (d->float_conf.ki_limit > 0 && fabsf(d->pid_integral) > d->float_conf.ki_limit) {
-				d->pid_integral = d->float_conf.ki_limit * SIGN(d->pid_integral);
-			}
-			// Quickly ramp down integral component during reverse stop
-			if (d->setpointAdjustmentType == REVERSESTOP) {
-				d->pid_integral = d->pid_integral * 0.9;
-			}
-
-			// Apply P Brake Scaling
-			float scaled_kp;
-			if (d->proportional < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
-				scaled_kp = d->float_conf.kp * d->kp_brake_scale;
-			} else {
-				scaled_kp = d->float_conf.kp * d->kp_accel_scale;
-			}
-
-			d->pid_prop = scaled_kp * d->proportional;
-			new_pid_value = d->pid_prop + d->pid_integral;
-
-			d->last_proportional = d->proportional;
-
-			// Start Rate PID and Booster portion a few cycles later, after the start clicks have been emitted
-			// this keeps the start smooth and predictable
-			if (d->start_counter_clicks == 0) {
-
-				// Rate P (Angle + Rate, rather than Angle-Rate Cascading)
-				float rate_prop = -d->gyro[1];
-
-				float scaled_kp2;
-				if (rate_prop < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
-					scaled_kp2 = d->float_conf.kp2 * d->kp2_brake_scale;
-				} else {
-					scaled_kp2 = d->float_conf.kp2 * d->kp2_accel_scale;
-				}
-
-				d->pid_mod = (scaled_kp2 * rate_prop);
+			new_pid_value = calculate_pid_value(d);
 
 
-				// Apply Booster (Now based on True Pitch)
-				float true_proportional = (d->setpoint - d->braketilt_interpolated) - d->true_pitch_angle; // Braketilt excluded to allow for soft brakes that strengthen when near tail-drag
-				d->abs_proportional = fabsf(true_proportional);
 
-				float booster_current, booster_angle, booster_ramp;
-				if (tail_down) {
-					booster_current = d->float_conf.brkbooster_current;
-					booster_angle = d->float_conf.brkbooster_angle;
-					booster_ramp = d->float_conf.brkbooster_ramp;
-				}
-				else {
-					booster_current = d->float_conf.booster_current;
-					booster_angle = d->float_conf.booster_angle;
-					booster_ramp = d->float_conf.booster_ramp;
-				}
+			// take a throttle input which is max speed * throttle_val
+			// maintain a setpoiint of +- 5 degrees
+				// d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
+			// accelerate why maintaining setpoint
+			// if going speed maintain setpoint and only adjust for user shifts
+			//  more current if positive pitch, less if negative pitch
 
-				// Make booster a bit stronger at higher speed (up to 2x stronger when braking)
-				const int boost_min_erpm = 3000;
-				if (d->abs_erpm > boost_min_erpm) {
-					float speedstiffness = fminf(1, (d->abs_erpm - boost_min_erpm) / 10000);
-					if (tail_down) {
-						// use higher current at speed when braking
-						booster_current += booster_current * speedstiffness;
-					}
-					else {
-						// when accelerating, we reduce the booster start angle as we get faster
-						// strength remains unchanged
-						float angledivider = 1 + speedstiffness;
-						booster_angle /= angledivider;
-					}
-				}
+			float desired_current = d->throttle_val * d->mc_current_max;
+			// ramp up from current current to desired current
+			float current_step = (d->desired_current - d->motor_current) / d->float_conf.hertz;
 
-				if (d->abs_proportional > booster_angle) {
-					if (d->abs_proportional - booster_angle < booster_ramp) {
-						booster_current *= SIGN(true_proportional) *
-								((d->abs_proportional - booster_angle) / booster_ramp);
-					} else {
-						booster_current *= SIGN(true_proportional);
-					}
-				}
-				else {
-					booster_current = 0;
-				}
+			new_pid_value += current_step;
 
-				// No harsh changes in booster current (effective delay <= 100ms)
-				d->applied_booster_current = 0.01 * booster_current + 0.99 * d->applied_booster_current;
-				d->pid_mod += d->applied_booster_current;
+			new_pid_value = limit_current(new_pid_value, d);
 
-				if (d->softstart_pid_limit < d->mc_current_max) {
-					d->pid_mod = fminf(fabs(d->pid_mod), d->softstart_pid_limit) * SIGN(d->pid_mod);
-					d->softstart_pid_limit += d->softstart_ramp_step_size;
-				}
+			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 
-				new_pid_value += d->pid_mod;
-			}
-			else {
-				d->pid_mod = 0;
-			}
-
-			// Current Limiting!
-			float current_limit;
-			if (d->braking) {
-				current_limit = d->mc_current_min * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
-			}
-			else {
-				current_limit = d->mc_current_max * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
-			}
-			if (fabsf(new_pid_value) > current_limit) {
-				new_pid_value = SIGN(new_pid_value) * current_limit;
-			}
-			else {
-				// Over continuous current for more than 3 seconds? Just beep, don't actually limit currents
-				if (fabsf(d->atr_filtered_current) < d->max_continuous_current) {
-					d->overcurrent_timer = d->current_time;
-					if (d->current_beeping) {
-						d->current_beeping = false;
-						beep_off(d, false);
-					}
-				} else {
-					if (d->current_time - d->overcurrent_timer > 3) {
-						beep_on(d, true);
-						d->current_beeping = true;
-					}
-				}
-			}
-			
-			if (d->traction_control) {
-				// freewheel while traction loss is detected
-				d->pid_value = 0;
-			}
-			else {
-				// Brake Amp Rate Limiting
-				if (d->braking && (fabsf(d->pid_value - new_pid_value) > d->pid_brake_increment)) {
-					if (new_pid_value > d->pid_value) {
-						d->pid_value += d->pid_brake_increment;
-					}
-					else {
-						d->pid_value -= d->pid_brake_increment;
-					}
-				}
-				else {
-					d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
-				}
-			}
-
-			// Output to motor
-			if (d->start_counter_clicks) {
-				// Generate alternate pulses to produce distinct "click"
-				d->start_counter_clicks--;
-				if ((d->start_counter_clicks & 0x1) == 0)
-					set_current(d, d->pid_value - d->float_conf.startup_click_current);
-				else
-					set_current(d, d->pid_value + d->float_conf.startup_click_current);
-			}
-			else {
-				set_current(d, d->pid_value);
-			}
+			set_current(d, d->pid_value);
 
 			break;
 
@@ -2109,11 +1910,6 @@ static void float_thd(void *arg) {
 			}
 
 			if (d->current_time - d->disengage_timer > 10) {
-				// 10 seconds of grace period between flipping the board over and allowing darkride mode...
-				if (d->is_upside_down) {
-					beep_alert(d, 1, true);
-				}
-				d->enable_upside_down = false;
 				d->is_upside_down = false;
 			}	
 			if (d->current_time - d->disengage_timer > 1800) {	// alert user after 30 minutes
@@ -2148,15 +1944,6 @@ static void float_thd(void *arg) {
 				d->switch_state == ON) {
 				reset_vars(d);
 				break;
-			}
-			// Ignore roll while it's upside down
-			if(d->is_upside_down && (fabsf(d->pitch_angle) < d->startup_pitch_tolerance)) {
-				if ((d->state != FAULT_REVERSE) ||
-					// after a reverse fault, wait at least 1 second before allowing to re-engage
-					(d->current_time - d->disengage_timer) > 1) {
-					reset_vars(d);
-					break;
-				}
 			}
 			// Push-start aka dirty landing Part II
 			if(d->float_conf.startup_pushstart_enabled && (d->abs_erpm > 1000) && (d->switch_state == ON)) {
@@ -2352,6 +2139,7 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->applied_booster_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->motor_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->throttle_val, &ind);
+	buffer_append_float32_auto(send_buffer, d->desired_current, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");
