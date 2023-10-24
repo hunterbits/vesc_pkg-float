@@ -43,7 +43,7 @@ Item {
                 "Float Quicksave 4": "Quicksave 4",
                 "Float Quicksave 5": "Quicksave 5",
                 "Float Quicksave 6": "Quicksave 6",
-                "IMU Quicksave 1": "IMU Quicksave 101",
+                "IMU Quicksave 1": "IMU Quicksave 102",
                 "IMU Quicksave 2": "IMU Quicksave 2"
                 }
 
@@ -194,6 +194,7 @@ Item {
                 var applied_booster_current = dv.getFloat32(ind); ind += 4;
                 var motor_current = dv.getFloat32(ind); ind += 4;
                 var throttle_val = dv.getFloat32(ind); ind += 4;
+                var desired_current = dv.getFloat32(ind); ind += 4;
 
                 // var debug1 = dv.getFloat32(ind); ind += 4;
                 // var debug2 = dv.getFloat32(ind); ind += 4;
@@ -333,7 +334,8 @@ Item {
                     "Torque              : " + filtered_current.toFixed(2) + "A\n" +
                     "Acc. Diff.          : " + float_acc_diff.toFixed(2) + "\n" +
                     "Booster Current     : " + applied_booster_current.toFixed(2) + "A\n" +
-                    "Remote Input        : " + (throttle_val * 100).toFixed(0) + "%\n"
+                    "Remote Input        : " + (throttle_val * 100).toFixed(0) + "%\n" +
+                    "Throttle target       : " + desired_current.toFixed(2) + "\n" +
 
                 if (beep_reason > 0) {
 		    debug.text += "Last Beep Reason    : " + beepString + "\n"
