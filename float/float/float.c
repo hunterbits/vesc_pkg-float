@@ -198,6 +198,7 @@ typedef struct {
 	float quickstop_erpm;
 	bool traction_control;
 	float desired_current;
+	float current_step;
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -1841,19 +1842,11 @@ static void float_thd(void *arg) {
 			new_pid_value = calculate_pid_value(d);
 
 
-
-			// take a throttle input which is max speed * throttle_val
-			// maintain a setpoiint of +- 5 degrees
-				// d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
-			// accelerate why maintaining setpoint
-			// if going speed maintain setpoint and only adjust for user shifts
-			//  more current if positive pitch, less if negative pitch
-
-			float desired_current = d->throttle_val * d->mc_current_max;
-			// ramp up from current current to desired current
+			d->desired_current = d->throttle_val * d->mc_current_max;
 			float current_step = (d->desired_current - d->motor_current) / d->float_conf.hertz;
+			d->current_step = current_step * d->float_conf.booster_current * 10;
 
-			new_pid_value += current_step;
+			new_pid_value += d->current_step;
 
 			new_pid_value = limit_current(new_pid_value, d);
 
@@ -2140,6 +2133,7 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->motor_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->throttle_val, &ind);
 	buffer_append_float32_auto(send_buffer, d->desired_current, &ind);
+	buffer_append_float32_auto(send_buffer, d->current_step, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");
