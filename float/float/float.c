@@ -1561,6 +1561,36 @@ static void imu_ref_callback(float *acc, float *gyro, float *mag, float dt) {
 	VESC_IF->ahrs_update_mahony_imu(gyro, acc, dt, &d->m_att_ref);
 }
 
+float limit_current(float new_pid_value, data *d) {
+    float current_limit;
+    if (d->braking) {
+        current_limit = d->mc_current_min * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+    }
+    else {
+        current_limit = d->mc_current_max * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+    }
+
+    if (fabsf(new_pid_value) > current_limit) {
+        new_pid_value = SIGN(new_pid_value) * current_limit;
+    }
+    else {
+        // Over continuous current for more than 3 seconds? Just beep, don't actually limit currents
+        if (fabsf(d->atr_filtered_current) < d->max_continuous_current) {
+            d->overcurrent_timer = d->current_time;
+            if (d->current_beeping) {
+                d->current_beeping = false;
+                beep_off(d, false);
+            }
+        } else {
+            if (d->current_time - d->overcurrent_timer > 3) {
+                beep_on(d, true);
+                d->current_beeping = true;
+            }
+        }
+    }
+    return new_pid_value;
+}
+
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
 
@@ -1747,7 +1777,7 @@ static void float_thd(void *arg) {
 		case (RUNNING_FLYWHEEL):
 			// Check for faults
 			if (check_faults(d)) {
-				if ((d->state == FAULT_SWITCH_FULL) && !d->is_upside_down) {
+				if ((d->state == FAULT_SWITCH_FULL)) {
 					// dirty landings: add extra margin when rightside up
 					d->startup_pitch_tolerance = d->float_conf.startup_pitch_tolerance + d->startup_pitch_trickmargin;
 					d->fault_angle_pitch_timer = d->current_time;
@@ -1762,33 +1792,19 @@ static void float_thd(void *arg) {
 			calculate_setpoint_target(d);
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
-			add_surge(d);
-			
-			apply_inputtilt(d);
-			if (!d->is_upside_down) {
-				apply_noseangling(d);
-				apply_torquetilt(d);
-				apply_turntilt(d);
-			}
 
 			// Prepare Brake Scaling (ramp scale values as needed for smooth transitions)
 			if (fabsf(d->erpm) < 500) { // Nearly standstill
 				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // All scaling should roll back to 1.0x when near a stop for a smooth stand-still and back-forth transition
-				d->kp2_brake_scale = 0.01 + 0.99 * d->kp2_brake_scale;
 				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
-				d->kp2_accel_scale = 0.01 + 0.99 * d->kp2_accel_scale;
 
 			} else if (d->erpm > 0){ // Moving forwards
 				d->kp_brake_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_brake_scale; // Once rolling forward, brakes should transition to scaled values
-				d->kp2_brake_scale = 0.01 * d->float_conf.kp2_brake + 0.99 * d->kp2_brake_scale;
 				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
-				d->kp2_accel_scale = 0.01 + 0.99 * d->kp2_accel_scale;
 
 			} else { // Moving backwards
 				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // Once rolling backward, the NEW brakes (we will use kp_accel) should transition to scaled values
-				d->kp2_brake_scale = 0.01 + 0.99 * d->kp2_brake_scale;
 				d->kp_accel_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_accel_scale;
-				d->kp2_accel_scale = 0.01 * d->float_conf.kp2_brake + 0.99 * d->kp2_accel_scale;
 			}
 
 			// Do PID maths
@@ -1818,142 +1834,11 @@ static void float_thd(void *arg) {
 			d->pid_prop = scaled_kp * d->proportional;
 			new_pid_value = d->pid_prop + d->pid_integral;
 
-			d->last_proportional = d->proportional;
+			new_pid_value = limit_current(new_pid_value, d);
 
-			// Start Rate PID and Booster portion a few cycles later, after the start clicks have been emitted
-			// this keeps the start smooth and predictable
-			if (d->start_counter_clicks == 0) {
+			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 
-				// Rate P (Angle + Rate, rather than Angle-Rate Cascading)
-				float rate_prop = -d->gyro[1];
-
-				float scaled_kp2;
-				if (rate_prop < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
-					scaled_kp2 = d->float_conf.kp2 * d->kp2_brake_scale;
-				} else {
-					scaled_kp2 = d->float_conf.kp2 * d->kp2_accel_scale;
-				}
-
-				d->pid_mod = (scaled_kp2 * rate_prop);
-
-
-				// Apply Booster (Now based on True Pitch)
-				float true_proportional = (d->setpoint - d->braketilt_interpolated) - d->true_pitch_angle; // Braketilt excluded to allow for soft brakes that strengthen when near tail-drag
-				d->abs_proportional = fabsf(true_proportional);
-
-				float booster_current, booster_angle, booster_ramp;
-				if (tail_down) {
-					booster_current = d->float_conf.brkbooster_current;
-					booster_angle = d->float_conf.brkbooster_angle;
-					booster_ramp = d->float_conf.brkbooster_ramp;
-				}
-				else {
-					booster_current = d->float_conf.booster_current;
-					booster_angle = d->float_conf.booster_angle;
-					booster_ramp = d->float_conf.booster_ramp;
-				}
-
-				// Make booster a bit stronger at higher speed (up to 2x stronger when braking)
-				const int boost_min_erpm = 3000;
-				if (d->abs_erpm > boost_min_erpm) {
-					float speedstiffness = fminf(1, (d->abs_erpm - boost_min_erpm) / 10000);
-					if (tail_down) {
-						// use higher current at speed when braking
-						booster_current += booster_current * speedstiffness;
-					}
-					else {
-						// when accelerating, we reduce the booster start angle as we get faster
-						// strength remains unchanged
-						float angledivider = 1 + speedstiffness;
-						booster_angle /= angledivider;
-					}
-				}
-
-				if (d->abs_proportional > booster_angle) {
-					if (d->abs_proportional - booster_angle < booster_ramp) {
-						booster_current *= SIGN(true_proportional) *
-								((d->abs_proportional - booster_angle) / booster_ramp);
-					} else {
-						booster_current *= SIGN(true_proportional);
-					}
-				}
-				else {
-					booster_current = 0;
-				}
-
-				// No harsh changes in booster current (effective delay <= 100ms)
-				d->applied_booster_current = 0.01 * booster_current + 0.99 * d->applied_booster_current;
-				d->pid_mod += d->applied_booster_current;
-
-				if (d->softstart_pid_limit < d->mc_current_max) {
-					d->pid_mod = fminf(fabs(d->pid_mod), d->softstart_pid_limit) * SIGN(d->pid_mod);
-					d->softstart_pid_limit += d->softstart_ramp_step_size;
-				}
-
-				new_pid_value += d->pid_mod;
-			}
-			else {
-				d->pid_mod = 0;
-			}
-
-			// Current Limiting!
-			float current_limit;
-			if (d->braking) {
-				current_limit = d->mc_current_min * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
-			}
-			else {
-				current_limit = d->mc_current_max * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
-			}
-			if (fabsf(new_pid_value) > current_limit) {
-				new_pid_value = SIGN(new_pid_value) * current_limit;
-			}
-			else {
-				// Over continuous current for more than 3 seconds? Just beep, don't actually limit currents
-				if (fabsf(d->atr_filtered_current) < d->max_continuous_current) {
-					d->overcurrent_timer = d->current_time;
-					if (d->current_beeping) {
-						d->current_beeping = false;
-						beep_off(d, false);
-					}
-				} else {
-					if (d->current_time - d->overcurrent_timer > 3) {
-						beep_on(d, true);
-						d->current_beeping = true;
-					}
-				}
-			}
-			
-			if (d->traction_control) {
-				// freewheel while traction loss is detected
-				d->pid_value = 0;
-			}
-			else {
-				// Brake Amp Rate Limiting
-				if (d->braking && (fabsf(d->pid_value - new_pid_value) > d->pid_brake_increment)) {
-					if (new_pid_value > d->pid_value) {
-						d->pid_value += d->pid_brake_increment;
-					}
-					else {
-						d->pid_value -= d->pid_brake_increment;
-					}
-				}
-				else {
-					d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
-				}
-			}
-
-			// Output to motor
-			if (d->start_counter_clicks) {
-				// Generate alternate pulses to produce distinct "click"
-				d->start_counter_clicks--;
-				if ((d->start_counter_clicks & 0x1) == 0)
-					set_current(d, d->pid_value - d->float_conf.startup_click_current);
-				else
-					set_current(d, d->pid_value + d->float_conf.startup_click_current);
-			}
-			else {
-				set_current(d, d->pid_value);
-			}
+			set_current(d, d->pid_value);
 
 			break;
 
