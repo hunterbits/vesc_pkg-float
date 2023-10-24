@@ -1836,9 +1836,25 @@ static void float_thd(void *arg) {
 
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
-			bool tail_down = SIGN(d->proportional) != SIGN(d->erpm);
-			
+
 			new_pid_value = calculate_pid_value(d);
+
+
+
+			// take a throttle input which is max speed * throttle_val
+			// maintain a setpoiint of +- 5 degrees
+				// d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
+			// accelerate why maintaining setpoint
+			// if going speed maintain setpoint and only adjust for user shifts
+			//  more current if positive pitch, less if negative pitch
+
+			// float desired_current = d->throttle_val * d->mc_current_max;
+			float desired_current = d->throttle_val * 30;
+			// ramp up from current current to desired current
+			float current_step = (desired_current - d->motor_current) / d->float_conf.hertz;
+
+			new_pid_value += current_step;
+
 			new_pid_value = limit_current(new_pid_value, d);
 
 			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
