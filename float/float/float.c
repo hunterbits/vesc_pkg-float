@@ -1591,6 +1591,46 @@ float limit_current(float new_pid_value, data *d) {
     return new_pid_value;
 }
 
+void prepare_brake_scaling(data *d) {
+    if (fabsf(d->erpm) < 500) { // Nearly standstill
+        d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // All scaling should roll back to 1.0x when near a stop for a smooth stand-still and back-forth transition
+        d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
+    } else if (d->erpm > 0){ // Moving forwards
+        d->kp_brake_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_brake_scale; // Once rolling forward, brakes should transition to scaled values
+        d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
+    } else { // Moving backwards
+        d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // Once rolling backward, the NEW brakes (we will use kp_accel) should transition to scaled values
+        d->kp_accel_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_accel_scale;
+    }
+}
+
+float calculate_pid_value(data *d) {
+    // Resume real PID maths
+    d->pid_integral = d->pid_integral + d->proportional * d->float_conf.ki;
+
+    // Apply I term Filter
+    if (d->float_conf.ki_limit > 0 && fabsf(d->pid_integral) > d->float_conf.ki_limit) {
+        d->pid_integral = d->float_conf.ki_limit * SIGN(d->pid_integral);
+    }
+    // Quickly ramp down integral component during reverse stop
+    if (d->setpointAdjustmentType == REVERSESTOP) {
+        d->pid_integral = d->pid_integral * 0.9;
+    }
+
+    // Apply P Brake Scaling
+    float scaled_kp;
+    if (d->proportional < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
+        scaled_kp = d->float_conf.kp * d->kp_brake_scale;
+    } else {
+        scaled_kp = d->float_conf.kp * d->kp_accel_scale;
+    }
+
+    d->pid_prop = scaled_kp * d->proportional;
+    float new_pid_value = d->pid_prop + d->pid_integral;
+
+    return new_pid_value;
+}
+
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
 
@@ -1784,8 +1824,7 @@ static void float_thd(void *arg) {
 				}
 				break;
 			}
-			d->odometer_dirty = 1;
-			
+			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
 
 			// Calculate setpoint and interpolation
@@ -1793,47 +1832,13 @@ static void float_thd(void *arg) {
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 
-			// Prepare Brake Scaling (ramp scale values as needed for smooth transitions)
-			if (fabsf(d->erpm) < 500) { // Nearly standstill
-				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // All scaling should roll back to 1.0x when near a stop for a smooth stand-still and back-forth transition
-				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
-
-			} else if (d->erpm > 0){ // Moving forwards
-				d->kp_brake_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_brake_scale; // Once rolling forward, brakes should transition to scaled values
-				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
-
-			} else { // Moving backwards
-				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // Once rolling backward, the NEW brakes (we will use kp_accel) should transition to scaled values
-				d->kp_accel_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_accel_scale;
-			}
+			prepare_brake_scaling(d);
 
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
 			bool tail_down = SIGN(d->proportional) != SIGN(d->erpm);
-
-			// Resume real PID maths
-			d->pid_integral = d->pid_integral + d->proportional * d->float_conf.ki;
-
-			// Apply I term Filter
-			if (d->float_conf.ki_limit > 0 && fabsf(d->pid_integral) > d->float_conf.ki_limit) {
-				d->pid_integral = d->float_conf.ki_limit * SIGN(d->pid_integral);
-			}
-			// Quickly ramp down integral component during reverse stop
-			if (d->setpointAdjustmentType == REVERSESTOP) {
-				d->pid_integral = d->pid_integral * 0.9;
-			}
-
-			// Apply P Brake Scaling
-			float scaled_kp;
-			if (d->proportional < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
-				scaled_kp = d->float_conf.kp * d->kp_brake_scale;
-			} else {
-				scaled_kp = d->float_conf.kp * d->kp_accel_scale;
-			}
-
-			d->pid_prop = scaled_kp * d->proportional;
-			new_pid_value = d->pid_prop + d->pid_integral;
-
+			
+			new_pid_value = calculate_pid_value(d);
 			new_pid_value = limit_current(new_pid_value, d);
 
 			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
