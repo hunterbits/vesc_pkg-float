@@ -199,6 +199,8 @@ typedef struct {
 	bool traction_control;
 	float desired_current;
 	float current_step;
+	float erpm_target;
+	float adjusted_setpoint;
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -1633,6 +1635,51 @@ float calculate_pid_value(data *d) {
     return new_pid_value;
 }
 
+void calculate_speed_target(data *d) {
+    float throttle_input = d->throttle_val;
+	// prolly do some smoothing/weighting/scaling in here
+    d->erpm_target = throttle_input * 10000;
+}
+float calculate_adjusted_setpoint(data *d) {
+    // Placeholder: PID constants for speed control
+    float Kp_speed = 1.0;
+    float Ki_speed = 0.0;
+    float Kd_speed = 0.0;
+
+    // Static variable to hold the previous error and integral for speed control
+    static float prev_error_speed = 0;
+    static float integral_speed = 0;
+
+    // Calculate the error for speed control
+    float error_speed = d->erpm_target - d->erpm;
+
+    // Calculate the integral and derivative for speed control
+    integral_speed += error_speed;
+    float derivative_speed = error_speed - prev_error_speed;
+
+    // Calculate the adjusted setpoint for the balance PID
+    float adjusted_setpoint = Kp_speed * error_speed + Ki_speed * integral_speed + Kd_speed * derivative_speed;
+
+    // Save the current error for the next iteration
+    prev_error_speed = error_speed;
+
+    return adjusted_setpoint;
+}
+
+// static void calculate_adjusted_setpoint_interpolated(data *d) {
+//     if (d->adjusted_setpoint != d->speed_based_setpoint) {
+//         // If we are less than one step size away, go all the way
+//         if (fabs(d->speed_based_setpoint - d->adjusted_setpoint) < get_setpoint_adjustment_step_size(d)) {
+//             d->adjusted_setpoint = d->speed_based_setpoint;
+//         } else if (d->speed_based_setpoint - d->adjusted_setpoint > 0) {
+//             d->adjusted_setpoint += get_setpoint_adjustment_step_size(d);
+//         } else {
+//             d->adjusted_setpoint -= get_setpoint_adjustment_step_size(d);
+//         }
+//     }
+// }
+
+
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
 
@@ -1831,37 +1878,29 @@ static void float_thd(void *arg) {
 
 			// Calculate setpoint and interpolation
 			calculate_setpoint_target(d);
+
+			// Calculate speed target based on throttle input
+			calculate_speed_target(d);
+
+			    // Calculate adjusted setpoint for balance based on speed control
+   			//  d->adjusted_setpoint = calculate_adjusted_setpoint(d);
+	   		 // Update the setpoint for the balance PID
+    		// d->setpoint = d->adjusted_setpoint;
+			 float temp_adjusted_setpoint = calculate_adjusted_setpoint(d);
+			 d->setpoint_target += temp_adjusted_setpoint;
+
 			calculate_setpoint_interpolated(d);
+			
 			d->setpoint = d->setpoint_target_interpolated;
 
+
 			prepare_brake_scaling(d);
-
-
-
-			// counteract the pitch by adding a setpoint adjustment
-			// take pitch angle and invert it, then scale it by the setpoint adjustment factor
-				// d->desired_current = SIGN(d->pitch_angle) * (d->pitch_angle / 10) * d->float_conf.booster_current;
-			if (d->pitch_angle < 0) {
-				d->desired_current = SIGN(d->pitch_angle) * (d->pitch_angle / 10) * d->float_conf.booster_current;
-			}
-			if (d->pitch_angle > 0) {
-				d->desired_current = -1 * (d->pitch_angle / 10) * d->float_conf.booster_current;
-			}
-
-			d->setpoint += d->desired_current;
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
 
 
 
 			new_pid_value = calculate_pid_value(d);
-
-
-			// d->desired_current = d->throttle_val * d->mc_current_max;
-			// float current_step = (d->desired_current - d->motor_current) / d->float_conf.hertz;
-			// d->current_step = current_step * d->float_conf.booster_current * 10;
-
-			// new_pid_value += d->current_step;
 
 			new_pid_value = limit_current(new_pid_value, d);
 
@@ -2149,6 +2188,7 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->throttle_val, &ind);
 	buffer_append_float32_auto(send_buffer, d->desired_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->current_step, &ind);
+	buffer_append_float32_auto(send_buffer, d->erpm, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");

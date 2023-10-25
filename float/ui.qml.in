@@ -196,6 +196,7 @@ Item {
                 var throttle_val = dv.getFloat32(ind); ind += 4;
                 var desired_current = dv.getFloat32(ind); ind += 4;
                 var current_step = dv.getFloat32(ind); ind += 4;
+                var erpm = dv.getFloat32(ind); ind += 4;
 
                 // var debug1 = dv.getFloat32(ind); ind += 4;
                 // var debug2 = dv.getFloat32(ind); ind += 4;
@@ -337,7 +338,8 @@ Item {
                     "Booster Current     : " + applied_booster_current.toFixed(2) + "A\n" +
                     "Remote Input        : " + (throttle_val * 100).toFixed(0) + "%\n" +
                     "Desirec Current     : " + desired_current.toFixed(2) + "%\n" +
-                    "Current Step        : " + current_step.toFixed(2) + "%\n"
+                    "Current Step        : " + current_step.toFixed(2) + "%\n" +
+                    "ERPM                : " + erpm.toFixed(2) + "%\n"
 
                 if (beep_reason > 0) {
 		    debug.text += "Last Beep Reason    : " + beepString + "\n"
