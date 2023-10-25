@@ -1566,10 +1566,10 @@ static void imu_ref_callback(float *acc, float *gyro, float *mag, float dt) {
 float limit_current(float new_pid_value, data *d) {
     float current_limit;
     if (d->braking) {
-        current_limit = d->mc_current_min * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+        current_limit = d->mc_current_min;
     }
     else {
-        current_limit = d->mc_current_max * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+        current_limit = d->mc_current_max;
     }
 
     if (fabsf(new_pid_value) > current_limit) {
@@ -1828,25 +1828,18 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-
-			// Calculate setpoint and interpolation
-			calculate_setpoint_target(d);
-			calculate_setpoint_interpolated(d);
-			d->setpoint = d->setpoint_target_interpolated;
-
-			prepare_brake_scaling(d);
-
-			// Do PID maths
-			d->proportional = d->setpoint - d->pitch_angle;
-
-			new_pid_value = calculate_pid_value(d);
-
+			d->setpoint = 0;
 
 			d->desired_current = d->throttle_val * d->mc_current_max;
 			float current_step = (d->desired_current - d->motor_current) / d->float_conf.hertz;
 			d->current_step = current_step * d->float_conf.booster_current * 10;
 
 			new_pid_value += d->current_step;
+
+			// if pitch angle is too high, reduce current or changing to quickly
+			if (fabsf(d->pitch_angle) > 5) {
+				new_pid_value -= d->current_step * 2;
+			}
 
 			new_pid_value = limit_current(new_pid_value, d);
 
