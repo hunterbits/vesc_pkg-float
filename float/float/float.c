@@ -1836,17 +1836,32 @@ static void float_thd(void *arg) {
 
 			prepare_brake_scaling(d);
 
+
+
+			// counteract the pitch by adding a setpoint adjustment
+			// take pitch angle and invert it, then scale it by the setpoint adjustment factor
+				// d->desired_current = SIGN(d->pitch_angle) * (d->pitch_angle / 10) * d->float_conf.booster_current;
+			if (d->pitch_angle < 0) {
+				d->desired_current = SIGN(d->pitch_angle) * (d->pitch_angle / 10) * d->float_conf.booster_current;
+			}
+			if (d->pitch_angle > 0) {
+				d->desired_current = -1 * (d->pitch_angle / 10) * d->float_conf.booster_current;
+			}
+
+			d->setpoint += d->desired_current;
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
+
+
 
 			new_pid_value = calculate_pid_value(d);
 
 
-			d->desired_current = d->throttle_val * d->mc_current_max;
-			float current_step = (d->desired_current - d->motor_current) / d->float_conf.hertz;
-			d->current_step = current_step * d->float_conf.booster_current * 10;
+			// d->desired_current = d->throttle_val * d->mc_current_max;
+			// float current_step = (d->desired_current - d->motor_current) / d->float_conf.hertz;
+			// d->current_step = current_step * d->float_conf.booster_current * 10;
 
-			new_pid_value += d->current_step;
+			// new_pid_value += d->current_step;
 
 			new_pid_value = limit_current(new_pid_value, d);
 
