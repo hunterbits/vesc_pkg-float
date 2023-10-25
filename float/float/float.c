@@ -1890,7 +1890,6 @@ static void float_thd(void *arg) {
 			// calculate_adjusted_setpoint_interpolated(d);
 
 			// may have to interpolate adjusted setpoint
-			
     		d->setpoint = d->adjusted_setpoint;
 			//  float temp_adjusted_setpoint = calculate_adjusted_setpoint(d);
 			//  d->setpoint_target += temp_adjusted_setpoint;
@@ -2193,6 +2192,7 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->desired_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->current_step, &ind);
 	buffer_append_float32_auto(send_buffer, d->erpm, &ind);
+	buffer_append_float32_auto(send_buffer, d->adjusted_setpoint, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");
