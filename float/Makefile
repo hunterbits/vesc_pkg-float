@@ -3,7 +3,7 @@ VESC_TOOL ?= vesc_tool
 all: float.vescpkg
 
 float.vescpkg: float README-pkg.md ui.qml
-	$(VESC_TOOL) --buildPkg "float.vescpkg:float.lisp:ui.qml:0:README-pkg.md:Float"
+	$(VESC_TOOL) --buildPkg "float.vescpkg:float.lisp:ui.qml:0"
 
 float:
 	$(MAKE) -C $@
