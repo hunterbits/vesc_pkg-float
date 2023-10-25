@@ -1878,20 +1878,24 @@ static void float_thd(void *arg) {
 
 			// Calculate setpoint and interpolation
 			calculate_setpoint_target(d);
+			calculate_setpoint_interpolated(d);
+			d->setpoint = d->setpoint_target_interpolated;
 
 			// Calculate speed target based on throttle input
 			calculate_speed_target(d);
 
 			    // Calculate adjusted setpoint for balance based on speed control
-   			//  d->adjusted_setpoint = calculate_adjusted_setpoint(d);
+   			 d->adjusted_setpoint = calculate_adjusted_setpoint(d);
 	   		 // Update the setpoint for the balance PID
-    		// d->setpoint = d->adjusted_setpoint;
-			 float temp_adjusted_setpoint = calculate_adjusted_setpoint(d);
-			 d->setpoint_target += temp_adjusted_setpoint;
+			// calculate_adjusted_setpoint_interpolated(d);
 
-			calculate_setpoint_interpolated(d);
+			// may have to interpolate adjusted setpoint
 			
-			d->setpoint = d->setpoint_target_interpolated;
+    		d->setpoint = d->adjusted_setpoint;
+			//  float temp_adjusted_setpoint = calculate_adjusted_setpoint(d);
+			//  d->setpoint_target += temp_adjusted_setpoint;
+
+			
 
 
 			prepare_brake_scaling(d);
