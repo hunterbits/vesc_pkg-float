@@ -1101,18 +1101,7 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 	float input_tiltback_target;
 	 
 	// Scale by Max Angle
-	// input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
-	float scaling_factor = d->float_conf.booster_current;
-	// if scaling factor equals 0 set to 1
-	if (scaling_factor == 0) {
-		scaling_factor = 1;
-	}
-
-	// float pitch_angle_max =  d->float_conf.inputtilt_angle_limit;
-
-	// input_tiltback_target = (d->pitch_angle/ pitch_angle_max) * d->float_conf.inputtilt_angle_limit;
-
-	input_tiltback_target = (-1 * d->pitch_angle * scaling_factor);
+	input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
 
 	float input_tiltback_target_diff = input_tiltback_target - d->inputtilt_interpolated;
 
@@ -1689,8 +1678,7 @@ float apply_speedtilt(data *d) {
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-	float speedtilt_target = -10 * (speed_pid / (100 * d->float_conf.booster_current)); 
-	// float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * d->float_conf.booster_current)); 
+	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * d->float_conf.booster_current)); 
 
 	d->speedtilt_target = speedtilt_target;
 
@@ -1708,7 +1696,17 @@ float apply_speedtilt(data *d) {
 
 float apply_balance(data *d) {
 	// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
-	float pitch_angle_target = -d->pitch_angle;
+	float scaling_factor = d->float_conf.booster_current;
+	// if scaling factor equals 0 set to 1
+	if (scaling_factor == 0) {
+		scaling_factor = 1;
+	}
+	float pitch_angle_target = -d->pitch_angle * scaling_factor;
+
+	// if abs pitch_angle_target > d->float_conf.inputtilt_angle_limit set to angle limit
+	if (fabsf(pitch_angle_target) > d->float_conf.inputtilt_angle_limit) {
+		pitch_angle_target =  SIGN(pitch_angle_target) *  d->float_conf.inputtilt_angle_limit;
+	}
 
 	d->pitch_angle_target = pitch_angle_target;
 
@@ -1942,15 +1940,15 @@ static void float_thd(void *arg) {
 			d->setpoint = d->setpoint_target_interpolated;
 
 
-			// Calculate speed target based on throttle input
-			calculate_speed_target(d);
-			apply_speedtilt(d);
 
 			// TODO:should adjust tilt to counteract user changes to maintain speed
 			// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
-			// apply_balance(d);
-			apply_inputtilt(d);
+			apply_balance(d);
 
+			// Calculate speed target based on throttle input
+			calculate_speed_target(d);
+			apply_speedtilt(d);
+			
 			prepare_brake_scaling(d);
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
