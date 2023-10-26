@@ -201,6 +201,7 @@ typedef struct {
 	float current_step;
 	float erpm_target;
 	float adjusted_setpoint;
+	float inputtilt_target;
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -1637,11 +1638,13 @@ float calculate_pid_value(data *d) {
 
 void calculate_speed_target(data *d) {
     float throttle_input = 0;
-	// prolly do some smoothing/weighting/scaling in here
-	// abs of throttle_input less than .1 set to 0
-	if (fabsf(throttle_input) > 0.1) {
+	// ignore remote noise
+	if (fabsf(d->throttle_val) > 0.1) {
 		throttle_input = d->throttle_val;
 	}
+	// prolly do some smoothing/weighting/scaling in here
+	// consider last throttle and whethere increasing/decreasing
+	// pid controller for throttle
     d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
 }
 
@@ -1665,12 +1668,15 @@ float apply_speedtilt(data *d) {
     float derivative_speed = error_speed - prev_error_speed;
 
     // Calculate the adjusted setpoint for the balance PID
-    float speed_pid = Kp_speed * error_speed + Ki_speed * integral_speed + Kd_speed * derivative_speed;
+    float speed_pid = Kp_speed * error_speed;
+	//  + Ki_speed * integral_speed + Kd_speed * derivative_speed;
 
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-	float inputtilt_target = 10 * (speed_pid / (100 * d->float_conf.booster_current)); 
+	float inputtilt_target = -10 * (speed_pid / (100 * d->float_conf.booster_current)); 
+
+	d->inputtilt_target = inputtilt_target;
 
 	float input_tiltback_target_diff = inputtilt_target - d->inputtilt_interpolated;
 	if (fabsf(input_tiltback_target_diff) < d->inputtilt_step_size){
@@ -2199,7 +2205,8 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->desired_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->current_step, &ind);
 	buffer_append_float32_auto(send_buffer, d->erpm, &ind);
-	buffer_append_float32_auto(send_buffer, d->adjusted_setpoint, &ind);
+	buffer_append_float32_auto(send_buffer, d->erpm_target, &ind);
+	buffer_append_float32_auto(send_buffer, d->inputtilt_target, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");
