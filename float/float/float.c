@@ -204,6 +204,8 @@ typedef struct {
 	float inputtilt_target;
 	float pitch_angle_target;
 	float pitch_angle_interpolated;
+	float speedtilt_target;
+	float speedtilt_interpolated;
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -1099,7 +1101,18 @@ static void apply_inputtilt(data *d){ // Input Tiltback
 	float input_tiltback_target;
 	 
 	// Scale by Max Angle
-	input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
+	// input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
+	float scaling_factor = d->float_conf.booster_current;
+	// if scaling factor equals 0 set to 1
+	if (scaling_factor == 0) {
+		scaling_factor = 1;
+	}
+
+	// float pitch_angle_max =  d->float_conf.inputtilt_angle_limit;
+
+	// input_tiltback_target = (d->pitch_angle/ pitch_angle_max) * d->float_conf.inputtilt_angle_limit;
+
+	input_tiltback_target = (-1 * d->pitch_angle * scaling_factor);
 
 	float input_tiltback_target_diff = input_tiltback_target - d->inputtilt_interpolated;
 
@@ -1676,19 +1689,21 @@ float apply_speedtilt(data *d) {
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-	float inputtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * d->float_conf.booster_current)); 
+	float speedtilt_target = -10 * (speed_pid / (100 * d->float_conf.booster_current)); 
+	// float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * d->float_conf.booster_current)); 
 
-	d->inputtilt_target = inputtilt_target;
+	d->speedtilt_target = speedtilt_target;
 
-	float input_tiltback_target_diff = inputtilt_target - d->inputtilt_interpolated;
-	if (fabsf(input_tiltback_target_diff) < d->inputtilt_step_size){
-		d->inputtilt_interpolated = inputtilt_target;
+	float speed_tiltback_target_diff = speedtilt_target - d->speedtilt_interpolated;
+
+	if (fabsf(speed_tiltback_target_diff) < d->inputtilt_step_size){
+		d->speedtilt_interpolated = speedtilt_target;
 	} else {
-		d->inputtilt_interpolated += d->inputtilt_step_size * SIGN(input_tiltback_target_diff);
+		d->speedtilt_interpolated += d->inputtilt_step_size * SIGN(speed_tiltback_target_diff);
 	}
 
 
-	d->setpoint += d->inputtilt_interpolated;
+	d->setpoint += d->speedtilt_interpolated;
 }
 
 float apply_balance(data *d) {
@@ -1933,7 +1948,8 @@ static void float_thd(void *arg) {
 
 			// TODO:should adjust tilt to counteract user changes to maintain speed
 			// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
-			apply_balance(d);
+			// apply_balance(d);
+			apply_inputtilt(d);
 
 			prepare_brake_scaling(d);
 			// Do PID maths
