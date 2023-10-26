@@ -202,6 +202,8 @@ typedef struct {
 	float erpm_target;
 	float adjusted_setpoint;
 	float inputtilt_target;
+	float pitch_angle_target;
+	float pitch_angle_interpolated;
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -1674,7 +1676,7 @@ float apply_speedtilt(data *d) {
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-	float inputtilt_target = -10 * (speed_pid / (100 * d->float_conf.booster_current)); 
+	float inputtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * d->float_conf.booster_current)); 
 
 	d->inputtilt_target = inputtilt_target;
 
@@ -1687,6 +1689,24 @@ float apply_speedtilt(data *d) {
 
 
 	d->setpoint += d->inputtilt_interpolated;
+}
+
+float apply_balance(data *d) {
+	// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
+	float pitch_angle_target = -d->pitch_angle;
+
+	d->pitch_angle_target = pitch_angle_target;
+
+	float pitch_angle_target_diff = pitch_angle_target - d->pitch_angle_interpolated;
+
+	if (fabsf(pitch_angle_target_diff) < d->inputtilt_step_size){
+		d->pitch_angle_interpolated = pitch_angle_target;
+	} else {
+		d->pitch_angle_interpolated += d->inputtilt_step_size * SIGN(pitch_angle_target_diff);
+	}
+
+
+	d->setpoint += d->pitch_angle_interpolated;
 }
 
 static void calculate_adjusted_setpoint_interpolated(data *d) {
@@ -1906,9 +1926,14 @@ static void float_thd(void *arg) {
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 
+
 			// Calculate speed target based on throttle input
 			calculate_speed_target(d);
 			apply_speedtilt(d);
+
+			// TODO:should adjust tilt to counteract user changes to maintain speed
+			// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
+			apply_balance(d);
 
 			prepare_brake_scaling(d);
 			// Do PID maths
