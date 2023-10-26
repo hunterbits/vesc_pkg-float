@@ -971,7 +971,7 @@ static void calculate_setpoint_target(data *d) {
 		}
 	} else {
 		// Normal running
-		if (d->float_conf.fault_reversestop_enabled && (d->erpm < -200) && !d->is_upside_down) {
+		if (d->float_conf.fault_reversestop_enabled && (d->erpm < -200)) {
 			d->setpointAdjustmentType = REVERSESTOP;
 			d->reverse_timer = d->current_time;
 			d->reverse_total_erpm = 0;
@@ -1636,13 +1636,20 @@ float calculate_pid_value(data *d) {
 }
 
 void calculate_speed_target(data *d) {
-    float throttle_input = d->throttle_val;
+    float throttle_input = 0;
 	// prolly do some smoothing/weighting/scaling in here
-    d->erpm_target = throttle_input * 10000;
+	// abs of throttle_input less than .1 set to 0
+	if (fabsf(throttle_input) > 0.1) {
+		throttle_input = d->throttle_val;
+	}
+    d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
 }
-float calculate_adjusted_setpoint(data *d) {
+
+float apply_speedtilt(data *d) {
     // Placeholder: PID constants for speed control
-    float Kp_speed = 1.0;
+	// ~3 secs to max wigth 832 hertz
+	// will need to ramp up or no? the target tilt should be smoothed by stepsize?
+    float Kp_speed = 1;
     float Ki_speed = 0.0;
     float Kd_speed = 0.0;
 
@@ -1658,26 +1665,31 @@ float calculate_adjusted_setpoint(data *d) {
     float derivative_speed = error_speed - prev_error_speed;
 
     // Calculate the adjusted setpoint for the balance PID
-    float adjusted_setpoint = Kp_speed * error_speed + Ki_speed * integral_speed + Kd_speed * derivative_speed;
+    float speed_pid = Kp_speed * error_speed + Ki_speed * integral_speed + Kd_speed * derivative_speed;
 
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-    return adjusted_setpoint;
+	float inputtilt_target = 10 * (speed_pid / (100 * d->float_conf.booster_current)); 
+
+	float input_tiltback_target_diff = inputtilt_target - d->inputtilt_interpolated;
+	if (fabsf(input_tiltback_target_diff) < d->inputtilt_step_size){
+		d->inputtilt_interpolated = inputtilt_target;
+	} else {
+		d->inputtilt_interpolated += d->inputtilt_step_size * SIGN(input_tiltback_target_diff);
+	}
+
+
+	d->setpoint += d->inputtilt_interpolated;
 }
 
-// static void calculate_adjusted_setpoint_interpolated(data *d) {
-//     if (d->adjusted_setpoint != d->speed_based_setpoint) {
-//         // If we are less than one step size away, go all the way
-//         if (fabs(d->speed_based_setpoint - d->adjusted_setpoint) < get_setpoint_adjustment_step_size(d)) {
-//             d->adjusted_setpoint = d->speed_based_setpoint;
-//         } else if (d->speed_based_setpoint - d->adjusted_setpoint > 0) {
-//             d->adjusted_setpoint += get_setpoint_adjustment_step_size(d);
-//         } else {
-//             d->adjusted_setpoint -= get_setpoint_adjustment_step_size(d);
-//         }
-//     }
-// }
+static void calculate_adjusted_setpoint_interpolated(data *d) {
+	// if (fabsf(input_tiltback_target_diff) < d->inputtilt_step_size){
+	// 	d->inputtilt_interpolated = input_tiltback_target;
+	// } else {
+	// 	d->inputtilt_interpolated += d->inputtilt_step_size * SIGN(input_tiltback_target_diff);
+	// }
+}
 
 
 static void float_thd(void *arg) {
@@ -1875,27 +1887,22 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-
+// FUCK
 			// Calculate setpoint and interpolation
+			// on normal d->setpoint_target = 0;
 			calculate_setpoint_target(d);
+			// starts as d->setpoint_target_interpolated = d->pitch_angle;
+			// if (d->setpoint_target - d->setpoint_target_interpolated > 0) {
+			// 	d->setpoint_target_interpolated += get_setpoint_adjustment_step_size(d);
+			// }
+			// get_setpoint_adjustment_step_size(d); returns d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
+			// d->float_conf.startup_speed ~ 5 degrees a second so 5/832 = 0.006 degrees
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 
 			// Calculate speed target based on throttle input
 			calculate_speed_target(d);
-
-			    // Calculate adjusted setpoint for balance based on speed control
-   			 d->adjusted_setpoint = calculate_adjusted_setpoint(d);
-	   		 // Update the setpoint for the balance PID
-			// calculate_adjusted_setpoint_interpolated(d);
-
-			// may have to interpolate adjusted setpoint
-    		d->setpoint = d->adjusted_setpoint;
-			//  float temp_adjusted_setpoint = calculate_adjusted_setpoint(d);
-			//  d->setpoint_target += temp_adjusted_setpoint;
-
-			
-
+			apply_speedtilt(d);
 
 			prepare_brake_scaling(d);
 			// Do PID maths
