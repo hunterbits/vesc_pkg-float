@@ -1688,7 +1688,8 @@ float apply_speedtilt(data *d) {
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * d->float_conf.booster_current)); 
+	// TODO tune max angle tilt
+	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
 
 	d->speedtilt_target = speedtilt_target;
 
@@ -1701,6 +1702,36 @@ float apply_speedtilt(data *d) {
 	}
 
 	d->setpoint += d->speedtilt_interpolated;
+
+	// dynamic setpoint adjustment 
+	// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
+	float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
+	d->prev_pitch_angle = d->pitch_angle;
+
+	// Threshold to detect user's leaning
+	float lean_threshold = 0.1;
+
+	// Adjustment factors
+    float speedtilt_weight = 0.5;  // You can tune this
+    float dynamic_tilt_weight = 1 - speedtilt_weight;  // You can tune this
+
+    // Conditional dynamic adjustment
+    if (rate_of_change_of_pitch < -lean_threshold) {
+        float dynamic_adjustment = -rate_of_change_of_pitch;
+        d->setpoint += dynamic_adjustment * dynamic_tilt_weight;
+
+        // Reduce speed tilt contribution
+        d->setpoint -= d->speedtilt_interpolated * (1 - speedtilt_weight);
+    } else if (rate_of_change_of_pitch > lean_threshold) {
+        float dynamic_adjustment = rate_of_change_of_pitch;
+        d->setpoint -= dynamic_adjustment * dynamic_tilt_weight;
+
+        // Reduce speed tilt contribution
+        d->setpoint -= d->speedtilt_interpolated * (1 - speedtilt_weight);
+    } else {
+        // When the user is not leaning, simply add the speed tilt
+        d->setpoint += d->speedtilt_interpolated * speedtilt_weight;
+    }
 }
 
 float dynamic_setpoint(data *d) {
@@ -1972,7 +2003,7 @@ static void float_thd(void *arg) {
 			apply_speedtilt(d);
 
 			// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
-			dynamic_setpoint(d);
+			// dynamic_setpoint(d);
 			prepare_brake_scaling(d);
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
