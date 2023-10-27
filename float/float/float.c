@@ -1970,6 +1970,8 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
+			float setpoint_balance_control = 0;
+			float setpoint_speed_control = 0;
 // FUCK
 			// Calculate setpoint and interpolation
 			// on normal d->setpoint_target = 0;
@@ -2008,8 +2010,10 @@ static void float_thd(void *arg) {
 			calculate_speed_target(d);
 			apply_speedtilt(d);
 
+			setpoint_speed_control = d->setpoint_speed_control;
+
 			// Combine the balance control and speed control contributions to form the final setpoint
-			d->setpoint = d->setpoint_balance_control + d->setpoint_speed_control;
+			d->setpoint = setpoint_balance_control + setpoint_speed_control;
 
 			prepare_brake_scaling(d);
 			// Do PID maths
