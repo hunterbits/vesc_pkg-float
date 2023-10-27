@@ -1773,6 +1773,36 @@ static void calculate_adjusted_setpoint_interpolated(data *d) {
 	// }
 }
 
+typedef struct {
+    float Kp;
+    float Ki;
+    float Kd;
+    float prev_error;
+    float integral;
+} PID;
+
+// Initialize PID Controller
+void PID_init(PID *pid, float Kp, float Ki, float Kd) {
+    pid->Kp = Kp;
+    pid->Ki = Ki;
+    pid->Kd = Kd;
+    pid->prev_error = 0;
+    pid->integral = 0;
+}
+
+// Compute PID Output
+float PID_compute(PID *pid, float setpoint, float actual_value) {
+    float error = setpoint - actual_value;
+    pid->integral += error;
+    float derivative = error - pid->prev_error;
+
+    float output = pid->Kp * error + pid->Ki * pid->integral + pid->Kd * derivative;
+
+    pid->prev_error = error;
+
+    return output;
+}
+
 
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
@@ -1930,6 +1960,23 @@ static void float_thd(void *arg) {
 
 		float new_pid_value = 0;
 
+		PID Speed_PID;
+		PID Balance_PID;
+
+		// Initialize PID constants for balance
+		float Kp_balance = 1.0;
+		float Ki_balance = 0.0;
+		float Kd_balance = 0.1;
+
+		// Initialize PID constants for speed
+		float Kp_speed = 0.5;
+		float Ki_speed = 0.01;
+		float Kd_speed = 0.1;
+
+		// Initialize the PID controllers
+		PID_init(&Balance_PID, Kp_balance, Ki_balance, Kd_balance);
+		PID_init(&Speed_PID, Kp_speed, Ki_speed, Kd_speed);
+
 		// Control Loop State Logic
 		switch(d->state) {
 		case (STARTUP):
@@ -1970,58 +2017,27 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-			float setpoint_balance_control = 0;
-			float setpoint_speed_control = 0;
-// FUCK
-			// Calculate setpoint and interpolation
-			// on normal d->setpoint_target = 0;
-			calculate_setpoint_target(d);
-			// starts as d->setpoint_target_interpolated = d->pitch_angle;
-			// if (d->setpoint_target - d->setpoint_target_interpolated > 0) {
-			// 	d->setpoint_target_interpolated += get_setpoint_adjustment_step_size(d);
-			// }
-			// get_setpoint_adjustment_step_size(d); returns d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
-			// d->float_conf.startup_speed ~ 5 degrees a second so 5/832 = 0.006 degrees
-			calculate_setpoint_interpolated(d);
-			d->setpoint = d->setpoint_target_interpolated;
-			float scaling_factor = d->float_conf.booster_current;
-			if (scaling_factor == 0) {
-				scaling_factor = 1;
-			}
-			static float prev_pitch_angle = 0;
-			float rate_of_change_of_pitch = d->pitch_angle - prev_pitch_angle;
-			prev_pitch_angle = d->pitch_angle;
+			// 
+			// 
+			// 
 
-			// Threshold to detect user's leaning
-			float lean_threshold = 0.1;
+			 // Read sensor values
+			float current_speed = read_speed();
+			float current_tilt = read_tilt();
+			float throttle_setting = read_throttle();
 
-			// Adjustment factor
-			float adjustment_factor = 0.1 * scaling_factor;
+			// Compute torque for balance and speed
+			float torque_for_balance = PID_compute(&Balance_PID, 0, current_tilt);  // Assuming 0 is the setpoint for balance
+			float torque_for_speed = PID_compute(&Speed_PID, throttle_setting, current_speed);
 
-			// Dynamic adjustment based on user's leaning
-			if (rate_of_change_of_pitch < -lean_threshold) {
-				d->setpoint_balance_control += -rate_of_change_of_pitch * adjustment_factor;
-			} else if (rate_of_change_of_pitch > lean_threshold) {
-				d->setpoint_balance_control -= rate_of_change_of_pitch * adjustment_factor;
-			}
+			// Combine the torques
+			float w1 = 0.5;  // weight for balance control
+			float w2 = 0.5;  // weight for speed control
+			float total_torque = w1 * torque_for_balance + w2 * torque_for_speed;
 
+			// Apply the total torque to control the motor
+			new_pid_value = total_torque;
 
-			// Calculate speed target based on throttle input
-			calculate_speed_target(d);
-			apply_speedtilt(d);
-
-			setpoint_speed_control = d->setpoint_speed_control;
-
-			// Combine the balance control and speed control contributions to form the final setpoint
-			d->setpoint = setpoint_balance_control + setpoint_speed_control;
-
-			prepare_brake_scaling(d);
-			// Do PID maths
-			d->proportional = d->setpoint - d->pitch_angle;
-
-
-
-			new_pid_value = calculate_pid_value(d);
 
 			new_pid_value = limit_current(new_pid_value, d);
 
