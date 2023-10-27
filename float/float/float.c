@@ -207,6 +207,9 @@ typedef struct {
 	float speedtilt_target;
 	float speedtilt_interpolated;
 	float prev_pitch_angle;
+	float setpoint_balance_control;
+	float setpoint_speed_control;
+
 
 	// PID Brake Scaling
 	float kp_brake_scale; // Used for brakes when riding forwards, and accel when riding backwards
@@ -1700,8 +1703,8 @@ float apply_speedtilt(data *d) {
 		d->speedtilt_interpolated += d->inputtilt_step_size * SIGN(speed_tiltback_target_diff);
 	}
 
-
-	d->setpoint += d->speedtilt_interpolated;
+	d->setpoint_speed_control = d->speedtilt_interpolated;
+	// d->setpoint += d->speedtilt_interpolated;
 }
 
 float dynamic_setpoint(data *d) {
@@ -1979,15 +1982,6 @@ static void float_thd(void *arg) {
 			// d->float_conf.startup_speed ~ 5 degrees a second so 5/832 = 0.006 degrees
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
-
-
-
-
-
-			// TODO:should adjust tilt to counteract user changes to maintain speed
-			// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
-			// dynamic_setpoint(d);
-			// Calculate the rate of change of pitch angle
 			float scaling_factor = d->float_conf.booster_current;
 			if (scaling_factor == 0) {
 				scaling_factor = 1;
@@ -2004,29 +1998,18 @@ static void float_thd(void *arg) {
 
 			// Dynamic adjustment based on user's leaning
 			if (rate_of_change_of_pitch < -lean_threshold) {
-				d->setpoint += -rate_of_change_of_pitch * adjustment_factor;
+				d->setpoint_balance_control += -rate_of_change_of_pitch * adjustment_factor;
 			} else if (rate_of_change_of_pitch > lean_threshold) {
-				d->setpoint -= rate_of_change_of_pitch * adjustment_factor;
+				d->setpoint_balance_control -= rate_of_change_of_pitch * adjustment_factor;
 			}
-			
-			// float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
-			// d->prev_pitch_angle = d->pitch_angle;
 
-			// // Threshold to detect user's leaning
-			// float lean_threshold = 0.1;  // Adjust this value based on your requirements
-
-			// // Dynamic adjustment based on user's leaning
-			// if (rate_of_change_of_pitch < -lean_threshold) {
-			// 	// User is leaning backward, increase setpoint to counteract
-			// 	d->setpoint += 0.1;  // Increment value, tune this based on your testing
-			// } else if (rate_of_change_of_pitch > lean_threshold) {
-			// 	// User is leaning forward, decrease setpoint to counteract
-			// 	d->setpoint -= 0.1;  // Decrement value, tune this based on your testing
-			// }
 
 			// Calculate speed target based on throttle input
 			calculate_speed_target(d);
 			apply_speedtilt(d);
+
+			// Combine the balance control and speed control contributions to form the final setpoint
+			d->setpoint = d->setpoint_balance_control + d->setpoint_speed_control;
 
 			prepare_brake_scaling(d);
 			// Do PID maths
