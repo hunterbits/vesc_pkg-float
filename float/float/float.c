@@ -1652,13 +1652,9 @@ float calculate_pid_value(data *d) {
 
 void calculate_speed_target(data *d) {
     float throttle_input = 0;
-	// ignore remote noise
 	if (fabsf(d->throttle_val) > 0.1) {
 		throttle_input = d->throttle_val;
 	}
-	// prolly do some smoothing/weighting/scaling in here
-	// consider last throttle and whethere increasing/decreasing
-	// pid controller for throttle
     d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
 }
 
@@ -1704,7 +1700,6 @@ float apply_speedtilt(data *d) {
 	d->setpoint += d->speedtilt_interpolated;
 
 	// dynamic setpoint adjustment 
-	// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
 	float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
 	d->prev_pitch_angle = d->pitch_angle;
 
@@ -1983,36 +1978,138 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-// FUCK
-			// Calculate setpoint and interpolation
-			// on normal d->setpoint_target = 0;
-			calculate_setpoint_target(d);
-			// starts as d->setpoint_target_interpolated = d->pitch_angle;
-			// if (d->setpoint_target - d->setpoint_target_interpolated > 0) {
-			// 	d->setpoint_target_interpolated += get_setpoint_adjustment_step_size(d);
-			// }
-			// get_setpoint_adjustment_step_size(d); returns d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
-			// d->float_conf.startup_speed ~ 5 degrees a second so 5/832 = 0.006 degrees
-			calculate_setpoint_interpolated(d);
+// fuck
+			d->setpoint_target = 0;
+			d->state = RUNNING;
+			if (d->setpoint_target_interpolated != d->setpoint_target) {
+				// If we are less than one step size away, go all the way
+				if (fabsf(d->setpoint_target - d->setpoint_target_interpolated) < get_setpoint_adjustment_step_size(d)) {
+					d->setpoint_target_interpolated = d->setpoint_target;
+				} else if (d->setpoint_target - d->setpoint_target_interpolated > 0) {
+					d->setpoint_target_interpolated += get_setpoint_adjustment_step_size(d);
+				} else {
+					d->setpoint_target_interpolated -= get_setpoint_adjustment_step_size(d);
+				}
+			}
 			d->setpoint = d->setpoint_target_interpolated;
+			
+			float throttle_input = 0;
+			if (fabsf(d->throttle_val) > 0.1) {
+				throttle_input = d->throttle_val;
+			}
+			d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
 
+			float Kp_speed = 1;
+			float Ki_speed = 0.0;
+			float Kd_speed = 0.0;
 
+			// Static variable to hold the previous error and integral for speed control
+			static float prev_error_speed = 0;
+			static float integral_speed = 0;
 
-			// Calculate speed target based on throttle input
-			calculate_speed_target(d);
-			apply_speedtilt(d);
+			// Calculate the error for speed control
+			float error_speed = d->erpm_target - d->erpm;
 
-			// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
-			// dynamic_setpoint(d);
-			prepare_brake_scaling(d);
+			// Calculate the integral and derivative for speed control
+			integral_speed += error_speed;
+			float derivative_speed = error_speed - prev_error_speed;
+
+			// Calculate the adjusted setpoint for the balance PID
+			float speed_pid = Kp_speed * error_speed;
+			//  + Ki_speed * integral_speed + Kd_speed * derivative_speed;
+
+			// Save the current error for the next iteration
+			prev_error_speed = error_speed;
+
+			// TODO tune max angle tilt
+			float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
+
+			d->speedtilt_target = speedtilt_target;
+
+			float speed_tiltback_target_diff = speedtilt_target - d->speedtilt_interpolated;
+
+			if (fabsf(speed_tiltback_target_diff) < d->inputtilt_step_size){
+				d->speedtilt_interpolated = speedtilt_target;
+			} else {
+				d->speedtilt_interpolated += d->inputtilt_step_size * SIGN(speed_tiltback_target_diff);
+			}
+
+			d->setpoint += d->speedtilt_interpolated;
+
+			// dynamic setpoint adjustment 
+			float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
+			d->prev_pitch_angle = d->pitch_angle;
+
+			// Threshold to detect user's leaning
+			float lean_threshold = 0.1;
+
+			// Adjustment factors
+			float speedtilt_weight = 0.5;  // You can tune this
+			float dynamic_tilt_weight = 1 - speedtilt_weight;  // You can tune this
+
+			// Conditional dynamic adjustment
+			if (rate_of_change_of_pitch < -lean_threshold) {
+				float dynamic_adjustment = -rate_of_change_of_pitch;
+				d->setpoint += dynamic_adjustment * dynamic_tilt_weight;
+
+				// Reduce speed tilt contribution
+				d->setpoint -= d->speedtilt_interpolated * (1 - speedtilt_weight);
+			} else if (rate_of_change_of_pitch > lean_threshold) {
+				float dynamic_adjustment = rate_of_change_of_pitch;
+				d->setpoint -= dynamic_adjustment * dynamic_tilt_weight;
+
+				// Reduce speed tilt contribution
+				d->setpoint -= d->speedtilt_interpolated * (1 - speedtilt_weight);
+			} else {
+				// When the user is not leaning, simply add the speed tilt
+				d->setpoint += d->speedtilt_interpolated * speedtilt_weight;
+			}
+			if (fabsf(d->erpm) < 500) { // Nearly standstill
+				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // All scaling should roll back to 1.0x when near a stop for a smooth stand-still and back-forth transition
+				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
+			} else if (d->erpm > 0){ // Moving forwards
+				d->kp_brake_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_brake_scale; // Once rolling forward, brakes should transition to scaled values
+				d->kp_accel_scale = 0.01 + 0.99 * d->kp_accel_scale;
+			} else { // Moving backwards
+				d->kp_brake_scale = 0.01 + 0.99 * d->kp_brake_scale; // Once rolling backward, the NEW brakes (we will use kp_accel) should transition to scaled values
+				d->kp_accel_scale = 0.01 * d->float_conf.kp_brake + 0.99 * d->kp_accel_scale;
+			}
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
+			// Resume real PID maths
+			d->pid_integral = d->pid_integral + d->proportional * d->float_conf.ki;
 
+			// Apply I term Filter
+			if (d->float_conf.ki_limit > 0 && fabsf(d->pid_integral) > d->float_conf.ki_limit) {
+				d->pid_integral = d->float_conf.ki_limit * SIGN(d->pid_integral);
+			}
+			// Quickly ramp down integral component during reverse stop
+			if (d->setpointAdjustmentType == REVERSESTOP) {
+				d->pid_integral = d->pid_integral * 0.9;
+			}
 
+			// Apply P Brake Scaling
+			float scaled_kp;
+			if (d->proportional < 0) { // Choose appropriate scale based on board angle (yes, this accomodates backwards riding)
+				scaled_kp = d->float_conf.kp * d->kp_brake_scale;
+			} else {
+				scaled_kp = d->float_conf.kp * d->kp_accel_scale;
+			}
 
-			new_pid_value = calculate_pid_value(d);
+			d->pid_prop = scaled_kp * d->proportional;
+			new_pid_value = d->pid_prop + d->pid_integral;
+			
+			float current_limit;
+			if (d->braking) {
+				current_limit = d->mc_current_min * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+			}
+			else {
+				current_limit = d->mc_current_max * (1 + 0.6 * fabsf(d->torqueresponse_interpolated / 10));
+			}
 
-			new_pid_value = limit_current(new_pid_value, d);
+			if (fabsf(new_pid_value) > current_limit) {
+				new_pid_value = SIGN(new_pid_value) * current_limit;
+			}
 
 			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 
