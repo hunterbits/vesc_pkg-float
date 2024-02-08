@@ -34,3 +34,14 @@ Source code can be found here: https://github.com/NicoAleman/vesc_pkg-float
 
 #### &nbsp;
 #### Build Info
+
+run zsh m.sh to build custom package
+be sure to export 
+export VESC_TOOL="/Applications/VESC Tool.app/Contents/MacOS/VESC Tool"
+export C_INCLUDE_PATH=/opt/homebrew/Cellar/arm-none-eabi-gcc/13.2.0/lib/gcc/arm-none-eabi/13.2.0/include:$C_INCLUDE_PATH
+<!-- think this is the only one needed... -->
+export PATH=$PATH:/System/Volumes/Data/Applications/ArmGNUToolchain/12.2.rel1/arm-none-eabi/bin
+<!-- dont think this ones needed... -->
+export QT_QPA_PLATFORM_PLUGIN_PATH=/System/Volumes/Data/Users/hunter/Qt/5.11.0/plugins/platforms/
+
+<!-- see Connect to Your VESC from Desktop on for connecting to board https://spinningmag.net/articles/vesc-guide/#hardware-10 -->
