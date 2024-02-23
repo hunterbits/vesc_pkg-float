@@ -1650,6 +1650,7 @@ float calculate_pid_value(data *d) {
     return new_pid_value;
 }
 
+// gives a mph value booster_current is just used for the app as a tuneable variable
 void calculate_speed_target(data *d) {
     float throttle_input = 0;
 	// ignore remote noise
@@ -1667,19 +1668,19 @@ float apply_speedtilt(data *d) {
 	// ~3 secs to max wigth 832 hertz
 	// will need to ramp up or no? the target tilt should be smoothed by stepsize?
     float Kp_speed = 1;
-    float Ki_speed = 0.0;
-    float Kd_speed = 0.0;
+    // float Ki_speed = 0.0;
+    // float Kd_speed = 0.0;
 
     // Static variable to hold the previous error and integral for speed control
     static float prev_error_speed = 0;
-    static float integral_speed = 0;
+    // static float integral_speed = 0;
 
     // Calculate the error for speed control
     float error_speed = d->erpm_target - d->erpm;
 
     // Calculate the integral and derivative for speed control
-    integral_speed += error_speed;
-    float derivative_speed = error_speed - prev_error_speed;
+    // integral_speed += error_speed;
+    // float derivative_speed = error_speed - prev_error_speed;
 
     // Calculate the adjusted setpoint for the balance PID
     float speed_pid = Kp_speed * error_speed;
@@ -1733,59 +1734,6 @@ float apply_speedtilt(data *d) {
         d->setpoint += d->speedtilt_interpolated * speedtilt_weight;
     }
 }
-
-float dynamic_setpoint(data *d) {
-	float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
-	d->prev_pitch_angle = d->pitch_angle;
-
-	// Threshold to detect user's leaning
-	float lean_threshold = 0.1;
-
-	// Adjustment factor
-	float adjustment_factor = 1;
-
-	// Dynamic adjustment based on user's leaning
-	if (rate_of_change_of_pitch < -lean_threshold) {
-		d->setpoint += -rate_of_change_of_pitch * adjustment_factor;
-	} else if (rate_of_change_of_pitch > lean_threshold) {
-		d->setpoint -= rate_of_change_of_pitch * adjustment_factor;
-	}
-}
-
-float apply_balance(data *d) {
-	// if speed is set to zero and a negative pitch is sensed increase setpoint to counteract lean
-	float scaling_factor = d->float_conf.booster_current;
-	if (scaling_factor == 0) {
-		scaling_factor = 1;
-	}
-	float pitch_angle_target = -d->pitch_angle * scaling_factor;
-
-	if (fabsf(pitch_angle_target) > d->float_conf.inputtilt_angle_limit) {
-		pitch_angle_target =  SIGN(pitch_angle_target) *  d->float_conf.inputtilt_angle_limit;
-	}
-
-	d->pitch_angle_target = pitch_angle_target;
-
-	float pitch_angle_target_diff = pitch_angle_target - d->pitch_angle_interpolated;
-
-	if (fabsf(pitch_angle_target_diff) < d->inputtilt_step_size){
-		d->pitch_angle_interpolated = pitch_angle_target;
-	} else {
-		d->pitch_angle_interpolated += d->inputtilt_step_size * SIGN(pitch_angle_target_diff);
-	}
-
-
-	d->setpoint += d->pitch_angle_interpolated;
-}
-
-static void calculate_adjusted_setpoint_interpolated(data *d) {
-	// if (fabsf(input_tiltback_target_diff) < d->inputtilt_step_size){
-	// 	d->inputtilt_interpolated = input_tiltback_target;
-	// } else {
-	// 	d->inputtilt_interpolated += d->inputtilt_step_size * SIGN(input_tiltback_target_diff);
-	// }
-}
-
 
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
@@ -1983,27 +1931,16 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-// FUCK
-			// Calculate setpoint and interpolation
-			// on normal d->setpoint_target = 0;
 			calculate_setpoint_target(d);
-			// starts as d->setpoint_target_interpolated = d->pitch_angle;
-			// if (d->setpoint_target - d->setpoint_target_interpolated > 0) {
-			// 	d->setpoint_target_interpolated += get_setpoint_adjustment_step_size(d);
-			// }
-			// get_setpoint_adjustment_step_size(d); returns d->startup_step_size = d->float_conf.startup_speed / d->float_conf.hertz;
-			// d->float_conf.startup_speed ~ 5 degrees a second so 5/832 = 0.006 degrees
 			calculate_setpoint_interpolated(d);
 			d->setpoint = d->setpoint_target_interpolated;
 
 
-
-			// Calculate speed target based on throttle input
+			// what i added basiclly
 			calculate_speed_target(d);
+			apply_turntilt(d);
 			apply_speedtilt(d);
 
-			// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
-			// dynamic_setpoint(d);
 			prepare_brake_scaling(d);
 			// Do PID maths
 			d->proportional = d->setpoint - d->pitch_angle;
