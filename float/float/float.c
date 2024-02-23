@@ -1098,53 +1098,6 @@ static void apply_noseangling(data *d){
 	d->setpoint += d->noseangling_interpolated;
 }
 
-static void apply_inputtilt(data *d){ // Input Tiltback
-	// float input_tiltback_target;
-	 
-	// Scale by Max Angle
-	float scaling_factor = d->float_conf.booster_current;
-	if (scaling_factor == 0) {
-		scaling_factor = 1;
-	}
-	float input_tiltback_target = -d->pitch_angle * scaling_factor;
-	if (fabsf(input_tiltback_target) > d->float_conf.inputtilt_angle_limit) {
-		input_tiltback_target =  SIGN(input_tiltback_target) *  d->float_conf.inputtilt_angle_limit;
-	}
-	// input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
-	// input_tiltback_target = d->throttle_val * d->float_conf.inputtilt_angle_limit;
-
-	float input_tiltback_target_diff = input_tiltback_target - d->inputtilt_interpolated;
-
-	if (d->float_conf.inputtilt_smoothing_factor > 0) { // Smoothen changes in tilt angle by ramping the step size
-		float smoothing_factor = 0.02;
-		for (int i = 1; i < d->float_conf.inputtilt_smoothing_factor; i++) {
-			smoothing_factor /= 2;
-		}
-
-		float smooth_center_window = 1.5 + (0.5 * d->float_conf.inputtilt_smoothing_factor); // Sets the angle away from Target that step size begins ramping down
-		if (fabsf(input_tiltback_target_diff) < smooth_center_window) { // Within X degrees of Target Angle, start ramping down step size
-			d->inputtilt_ramped_step_size = (smoothing_factor * d->inputtilt_step_size * (input_tiltback_target_diff / 2)) + ((1 - smoothing_factor) * d->inputtilt_ramped_step_size); // Target step size is reduced the closer to center you are (needed for smoothly transitioning away from center)
-			float centering_step_size = fminf(fabsf(d->inputtilt_ramped_step_size), fabsf(input_tiltback_target_diff / 2) * d->inputtilt_step_size) * SIGN(input_tiltback_target_diff); // Linearly ramped down step size is provided as minimum to prevent overshoot
-			if (fabsf(input_tiltback_target_diff) < fabsf(centering_step_size)) {
-				d->inputtilt_interpolated = input_tiltback_target;
-			} else {
-				d->inputtilt_interpolated += centering_step_size;
-			}
-		} else { // Ramp up step size until the configured tilt speed is reached
-			d->inputtilt_ramped_step_size = (smoothing_factor * d->inputtilt_step_size * SIGN(input_tiltback_target_diff)) + ((1 - smoothing_factor) * d->inputtilt_ramped_step_size);
-			d->inputtilt_interpolated += d->inputtilt_ramped_step_size;
-		}
-	} else { // Constant step size; no smoothing
-		if (fabsf(input_tiltback_target_diff) < d->inputtilt_step_size){
-		d->inputtilt_interpolated = input_tiltback_target;
-	} else {
-		d->inputtilt_interpolated += d->inputtilt_step_size * SIGN(input_tiltback_target_diff);
-	}
-	}
-
-	d->setpoint += d->inputtilt_interpolated;
-}
-
 static void apply_torquetilt(data *d) {
 	float tt_step_size = 0;
 	float atr_step_size = 0;
