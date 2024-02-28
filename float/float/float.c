@@ -1891,8 +1891,8 @@ static void float_thd(void *arg) {
 
 			// what i added basiclly
 			calculate_speed_target(d);
-			apply_turntilt(d);
 			apply_speedtilt(d);
+			apply_turntilt(d);
 
 			prepare_brake_scaling(d);
 			// Do PID maths
