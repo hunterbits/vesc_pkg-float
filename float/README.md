@@ -32,5 +32,6 @@ Release Changelogs: https://pev.dev/t/float-package-changelogs/499
 
 Source code can be found here: https://github.com/NicoAleman/vesc_pkg-float
 
+run zsh m.sh (need to export PATH=$PATH:/System/Volumes/Data/Applications/ArmGNUToolchain/12.2.rel1/arm-none-eabi/bin)
 #### &nbsp;
 #### Build Info

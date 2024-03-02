@@ -202,6 +202,7 @@ typedef struct {
 	float erpm_target;
 	float adjusted_setpoint;
 	float inputtilt_target;
+	float peak_speed;
 	float pitch_angle_target;
 	float pitch_angle_interpolated;
 	float speedtilt_target;
@@ -1603,18 +1604,354 @@ float calculate_pid_value(data *d) {
     return new_pid_value;
 }
 
-// gives a mph value booster_current is just used for the app as a tuneable variable
+
+// // gives a mph value booster_current is just used for the app as a tuneable variable
+// void calculate_speed_target(data *d) {
+//     float throttle_input = 0;
+// 	// ignore remote noise
+// 	if (fabsf(d->throttle_val) > 0.1) {
+// 		throttle_input = d->throttle_val;
+// 	}
+// 	// prolly do some smoothing/weighting/scaling in here
+// 	// consider last throttle and whethere increasing/decreasing
+// 	// pid controller for throttle
+//     // d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
+//     d->erpm_target = throttle_input * 100 * 50;
+// }
+
 void calculate_speed_target(data *d) {
-    float throttle_input = 0;
+	float throttle_input = 0;
+	float throttle_erpm_target = 0;
 	// ignore remote noise
 	if (fabsf(d->throttle_val) > 0.1) {
 		throttle_input = d->throttle_val;
 	}
-	// prolly do some smoothing/weighting/scaling in here
-	// consider last throttle and whethere increasing/decreasing
-	// pid controller for throttle
-    d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
+// 		d->peak_speed = peak_speed;
+	// Calculate the change in ERPM target per update
+	float erpm_change = 0.5;
+	throttle_erpm_target = throttle_input * 100 * 50;
+	d->inputtilt_target = throttle_erpm_target;
+
+	// Transition to the new ERPM target
+	if (throttle_erpm_target > d->erpm_target) {
+		d->erpm_target = fminf(d->erpm_target + erpm_change, throttle_erpm_target);
+	} else if (throttle_erpm_target < d->erpm_target) {
+		d->erpm_target = fmaxf(d->erpm_target - erpm_change, throttle_erpm_target);
+	}
 }
+// void calculate_speed_target(data *d) {
+//     float throttle_input = 0;
+// 	float throttle_desired = 0;
+// 	float throttle_target = 0;
+// 	static float peak_throttle = 0;
+// 	// ignore remote noise
+// 	if (fabsf(d->throttle_val) > 0.1) {
+// 		throttle_input = d->throttle_val;
+// 	}
+//     throttle_desired = throttle_input * 100 * 50;
+
+// 	if (throttle_desired < peak_throttle) {
+// 		float transition_factor = 0.01; // Adjust this value for the desired transition speed
+// 		throttle_target = peak_throttle * (1 - transition_factor) + throttle_desired * transition_factor;
+// 	}
+
+// 	peak_throttle = fmaxf(peak_throttle, throttle_target);
+	
+//     d->erpm_target = throttle_input * 100 * 50;
+// }
+
+// void calculate_speed_target(data *d) {
+//     static float smoothedErpmTarget = 0; // This will hold the smoothed ERPM target value across calls
+//     float throttle_input = 0;
+
+//     // Ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//     }
+
+//     // Calculate the desired target ERPM based on current throttle input
+//     // float desiredErpmTarget = throttle_input * 100 * d->float_conf.booster_current;
+//     float desiredErpmTarget = throttle_input * 100 * 50;
+
+//     // Apply exponential smoothing
+//     // smoothingFactor determines the responsiveness; closer to 0 makes it smoother but slower to respond
+//     float smoothingFactor = 0.01 * d->float_conf.booster_current; // Example value, adjust based on testing for desired responsiveness
+//     smoothedErpmTarget = smoothedErpmTarget * (1 - smoothingFactor) + desiredErpmTarget * smoothingFactor;
+
+//     // Set the smoothed target as the current target
+//     d->erpm_target = smoothedErpmTarget;
+// }
+
+// float exponentialDecay(float initialRate, float decayConstant, float timeElapsed) {
+//     return initialRate * exp(-decayConstant * timeElapsed);
+// }
+
+// void calculate_speed_target(data *d) {
+//     float throttle_input = 0;
+//     static float lastThrottleActiveTime = 0; // Track when the throttle was last active
+//     static bool isDecelerating = false; // Are we currently decelerating?
+//     static float initialERPMAtThrottleRelease = 0; // ERPM target at the moment throttle was released
+    
+//     // Current time in some form of timestamp - this will depend on your system's timekeeping
+	
+//     float currentTime = VESC_IF->system_time(); // You'll need to implement this based on your system
+    
+//     // Ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//         lastThrottleActiveTime = currentTime; // Update the last active time
+//         isDecelerating = false; // Reset decelerating flag
+//     } else if (!isDecelerating) {
+//         // Throttle has just been released
+//         isDecelerating = true;
+//         initialERPMAtThrottleRelease = d->erpm_target; // Capture the ERPM target at release
+//     }
+    
+//     if (isDecelerating) {
+//         // Calculate time elapsed since the throttle was released
+//         float timeElapsedSinceRelease = currentTime - lastThrottleActiveTime;
+        
+//         // Define decay constant - you'll need to tune this to your liking
+//         float decayConstant = 0.01 * d->float_conf.booster_current; // Example value, adjust based on testing
+        
+//         // Apply exponential decay to smoothly reduce the erpm_target
+//         d->erpm_target = exponentialDecay(initialERPMAtThrottleRelease, decayConstant, timeElapsedSinceRelease);
+        
+//         // Optionally, you can set a minimum ERPM target to ensure it doesn't decay too far
+//         float minimumERPM = 0; // Adjust based on your system
+//         d->erpm_target = fmaxf(d->erpm_target, minimumERPM);
+//     } else {
+//         // Throttle is engaged, set ERPM target normally
+//         // d->erpm_target = throttle_input * 100 * d->float_conf.booster_current;
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+// }
+
+// #define COASTING_DECREASE_RATE 100 // define the rate at which erpm_target decreases while coasting
+
+// void calculate_speed_target(data *d) {
+//     static float prev_throttle_input = 0; // static variable to keep the previous throttle input
+//     static int coasting = 0; // flag to indicate whether we're in the "coasting" state
+
+//     float throttle_input = 0;
+
+//     // ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//     }
+
+//     if (throttle_input == 0 && prev_throttle_input != 0) {
+//         // if throttle_input turns to zero from a given value, start "coasting"
+//         coasting = 1;
+//     } else if (throttle_input != 0) {
+//         // if throttle_input is not zero, stop "coasting"
+//         coasting = 0;
+//     }
+
+//     if (coasting) {
+//         // if we're "coasting", linearly decrease erpm_target
+//         d->erpm_target -= COASTING_DECREASE_RATE;
+//         if (d->erpm_target < 0) {
+//             d->erpm_target = 0; // ensure that erpm_target does not go below zero
+//         }
+//     } else {
+//         // if we're not "coasting", calculate the target speed as before
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+
+//     prev_throttle_input = throttle_input; // update the previous throttle input
+// }
+
+// #define COASTING_DECREASE_RATE 0.01 // define the rate at which erpm_target decreases while coasting as a fraction of the peak speed
+
+// void calculate_speed_target(data *d) {
+//     static float prev_throttle_input = 0; // static variable to keep the previous throttle input
+//     static float peak_speed = 0; // variable to keep the peak speed
+//     static int coasting = 0; // flag to indicate whether we're in the "coasting" state
+// 	// float COASTING_DECREASE_RATE = 0.01 * d->float_conf.booster_current;
+
+//     float throttle_input = 0;
+
+//     // ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//     }
+
+//     if (throttle_input == 0 && prev_throttle_input != 0) {
+//         // if throttle_input turns to zero from a given value, start "coasting"
+//         coasting = 1;
+//         peak_speed = d->erpm; // remember the peak speed
+//     } else if (throttle_input != 0) {
+//         // if throttle_input is not zero, stop "coasting"
+//         coasting = 0;
+//     }
+
+//     if (coasting) {
+//         // if we're "coasting", linearly decrease erpm_target
+//         d->erpm_target -= peak_speed * (0.01 * d->float_conf.booster_current);
+//         if (d->erpm_target < 0) {
+//             d->erpm_target = 0; // ensure that erpm_target does not go below zero
+//         }
+//     } else {
+//         // if we're not "coasting", calculate the target speed as before
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+
+//     prev_throttle_input = throttle_input; // update the previous throttle input
+// }
+
+// #define DECAY_FACTOR 0.001 // define the decay factor
+
+// void calculate_speed_target(data *d) {
+//     static float prev_throttle_input = 0; // static variable to keep the previous throttle input
+//     static float peak_speed = 0; // variable to keep the peak speed
+//     static int coasting = 0; // flag to indicate whether we're in the "coasting" state
+
+//     float throttle_input = 0;
+
+//     // ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//     }
+
+//     if (throttle_input == 0 && prev_throttle_input != 0) {
+//         // if throttle_input turns to zero from a given value, start "coasting"
+//         coasting = 1;
+//         peak_speed = d->erpm; // remember the peak speed
+//     } else if (throttle_input != 0) {
+//         // if throttle_input is not zero, stop "coasting"
+//         coasting = 0;
+//     }
+
+//     if (coasting) {
+//         // if we're "coasting", decrease erpm_target exponentially
+//         d->erpm_target -= peak_speed * (0.00001 * d->float_conf.booster_current);
+//         if (d->erpm_target < 0) {
+//             d->erpm_target = 0; // ensure that erpm_target does not go below zero
+//         }
+//     } else {
+//         // if we're not "coasting", calculate the target speed as before
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+
+//     prev_throttle_input = throttle_input; // update the previous throttle input
+// }
+
+
+// #include <math.h> // For fabsf function
+
+// void calculate_speed_target(data *d, float current_time) {
+//     float throttle_input = 0;
+//     // Assuming a and b are defined based on the linear fit for deceleration
+//     float a = -461.26;
+//     float b = 33102969;
+
+//     // Check if throttle has been released
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//         d->linear_decel_mode = 0;  // Disable linear deceleration mode if throttle is active
+//     } else if (fabsf(d->prev_throttle_val) > 0.1 && fabsf(d->throttle_val) <= 0.1) {
+//         // Throttle was released (transition from >0.1 to <=0.1)
+//         d->linear_decel_mode = 1;  // Enable linear deceleration mode
+//     }
+
+//     if (d->linear_decel_mode) {
+//         // Calculate the time-adjusted ERPM target for linear deceleration
+//         d->erpm_target = a * current_time + b;
+//     } else {
+//         // Calculate the ERPM target based on throttle input if not in deceleration mode
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+
+//     // Update the previous throttle value for next iteration
+//     d->prev_throttle_val = d->throttle_val;
+// }
+
+// #include <math.h> // For fabsf function
+
+// void calculate_speed_target(data *d, float current_time) {
+//     static float prev_throttle_input = 0; // static variable to keep the previous throttle input
+//     static float peak_speed_time = 0; // variable to keep the time when peak speed was recorded
+//     static int coasting = 0; // flag to indicate whether we're in the "coasting" state
+    
+//     float throttle_input = 0;
+    
+//     // Linear deceleration model coefficients
+//     float a = -461.26; // Example coefficient, adjust based on your linear model
+//     float b = 33102969; // Example offset, adjust based on your linear model
+
+//     // ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//     }
+
+//     if (throttle_input == 0 && prev_throttle_input != 0) {
+//         // if throttle_input turns to zero from a given value, start "coasting"
+//         coasting = 1;
+//         peak_speed_time = current_time; // remember the time when coasting started
+//     } else if (throttle_input != 0) {
+//         // if throttle_input is not zero, stop "coasting"
+//         coasting = 0;
+//     }
+
+//     if (coasting) {
+//         // Linear deceleration logic
+//         float time_since_peak = current_time - peak_speed_time;
+//         d->erpm_target = a * time_since_peak + b; // Apply linear deceleration
+//         if (d->erpm_target < 0) {
+//             d->erpm_target = 0; // ensure that erpm_target does not go below zero
+//         }
+//     } else {
+//         // if we're not "coasting", calculate the target speed as before
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+
+//     prev_throttle_input = throttle_input; // update the previous throttle input
+// }
+
+// void calculate_speed_target(data *d) {
+//     static float prev_throttle_input = 0; // Static variable to keep the previous throttle input
+//     static float peak_speed = 0; // Variable to keep the peak speed
+//     static int coasting = 0; // Flag to indicate whether we're in the "coasting" state
+// 	static int first_coast = 1;
+
+//     float throttle_input = 0;
+
+//     // ignore remote noise
+//     if (fabsf(d->throttle_val) > 0.1) {
+//         throttle_input = d->throttle_val;
+//     }
+
+//     if (throttle_input == 0 && prev_throttle_input != 0) {
+//         // if throttle_input turns to zero from a given value, start "coasting"
+//         coasting = 1;
+//         peak_speed = d->erpm; // Remember the peak speed when coasting starts
+// 		d->peak_speed = peak_speed;
+// 		d->inputtilt_target = 1;
+//     } else if (throttle_input != 0) {
+//         // if throttle_input is not zero, stop "coasting"
+//         coasting = 0;
+//     }
+
+//     if (coasting) {
+//         // Modification: Linearly decrease erpm_target by 0.5 each call to achieve 500 per second
+//         // d->erpm_target -= 0.01 * d->float_conf.booster_current; // Decrease ERPM by 0.5 for each function call (1000Hz)
+// 		if (first_coast) {
+// 			d->erpm_target = peak_speed;
+// 			first_coast = 0;
+// 		}
+//         	d->erpm_target -= 0.5; // Decrease ERPM by 0.5 for each function call (1000Hz)
+//         if (d->erpm_target < 0) {
+//             d->erpm_target = 0; // Ensure that erpm_target does not go below zero
+//         }
+//     } else {
+//         // if we're not "coasting", calculate the target speed as before
+//         d->erpm_target = throttle_input * 100 * 50;
+//     }
+
+//     prev_throttle_input = throttle_input; // Update the previous throttle input
+// }
+
 
 float apply_speedtilt(data *d) {
     // Placeholder: PID constants for speed control
@@ -2190,6 +2527,7 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->current_step, &ind);
 	buffer_append_float32_auto(send_buffer, d->erpm, &ind);
 	buffer_append_float32_auto(send_buffer, d->erpm_target, &ind);
+	buffer_append_float32_auto(send_buffer, d->peak_speed, &ind);
 	buffer_append_float32_auto(send_buffer, d->inputtilt_target, &ind);
 
 	if (ind > BUFSIZE) {

@@ -198,6 +198,7 @@ Item {
                 var current_step = dv.getFloat32(ind); ind += 4;
                 var erpm = dv.getFloat32(ind); ind += 4;
                 var erpm_target = dv.getFloat32(ind); ind += 4;
+                var peak_speed = dv.getFloat32(ind); ind += 4;
                 var inputtilt_target = dv.getFloat32(ind); ind += 4;
 
                 // var debug1 = dv.getFloat32(ind); ind += 4;
@@ -343,7 +344,8 @@ Item {
                     "Current Step        : " + current_step.toFixed(2) + "%\n" +
                     "ERPM                : " + erpm.toFixed(2) + "%\n" + 
                     "Target ERPM         : " + erpm_target.toFixed(2) + "\n" + 
-                    "inputtilt Target    : " + inputtilt_target + "\n"
+                    "PEAK SPEED         : " + peak_speed.toFixed(2) + "\n" + 
+                    "Coasting    : " + inputtilt_target + "\n"
 
                 if (beep_reason > 0) {
 		    debug.text += "Last Beep Reason    : " + beepString + "\n"
