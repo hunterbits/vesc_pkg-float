@@ -1619,26 +1619,65 @@ float calculate_pid_value(data *d) {
 //     d->erpm_target = throttle_input * 100 * 50;
 // }
 
-void calculate_speed_target(data *d) {
-	float throttle_input = 0;
-	float throttle_erpm_target = 0;
-	// ignore remote noise
-	if (fabsf(d->throttle_val) > 0.1) {
-		throttle_input = d->throttle_val;
-	}
-// 		d->peak_speed = peak_speed;
-	// Calculate the change in ERPM target per update
-	float erpm_change = 0.5;
-	throttle_erpm_target = throttle_input * 100 * 50;
-	d->inputtilt_target = throttle_erpm_target;
+// void calculate_speed_target(data *d) {
+// 	float throttle_input = 0;
+// 	float throttle_erpm_target = 0;
+// 	// ignore remote noise
+// 	if (fabsf(d->throttle_val) > 0.1) {
+// 		throttle_input = d->throttle_val;
+// 	}
 
-	// Transition to the new ERPM target
-	if (throttle_erpm_target > d->erpm_target) {
-		d->erpm_target = fminf(d->erpm_target + erpm_change, throttle_erpm_target);
-	} else if (throttle_erpm_target < d->erpm_target) {
-		d->erpm_target = fmaxf(d->erpm_target - erpm_change, throttle_erpm_target);
-	}
+// 	float erpm_change = 0.5;
+// 	throttle_erpm_target = throttle_input * 100 * 50;
+// 	d->inputtilt_target = throttle_erpm_target;
+
+// 	if (throttle_erpm_target > d->erpm_target) {
+// 		d->erpm_target = fminf(d->erpm_target + erpm_change, throttle_erpm_target);
+// 	} else if (throttle_erpm_target < d->erpm_target) {
+// 		d->erpm_target = fmaxf(d->erpm_target - erpm_change, throttle_erpm_target);
+// 	}
+// }
+void calculate_speed_target(data *d) {
+    float throttle_input = 0;
+    float throttle_erpm_target = 0;
+    // Ignore remote noise
+    if (fabsf(d->throttle_val) > 0.1) {
+        throttle_input = d->throttle_val;
+    }
+
+    // Adjust these values as needed for desired responsiveness
+    float erpm_change_acceleration = 1.0;  // Increased value for faster acceleration
+    float erpm_change_normal = 0.5;        // Original value for normal deceleration
+    float erpm_change_braking = 1.0;       // Increased value for faster braking
+
+    throttle_erpm_target = throttle_input * 100 * 50;
+    d->inputtilt_target = throttle_erpm_target;
+
+    float erpm_change = erpm_change_normal; // Default to normal deceleration rate
+
+    // Determine the adjustment based on throttle direction and magnitude
+    if (throttle_input > 0) {
+        // Accelerating
+        erpm_change = erpm_change_acceleration;
+    } else if (throttle_input < 0) {
+        // Actively braking
+        erpm_change = erpm_change_braking;
+    }
+
+    // Adjust target ERPM
+    if (throttle_erpm_target > d->erpm_target) {
+        d->erpm_target = fminf(d->erpm_target + erpm_change, throttle_erpm_target);
+    } else if (throttle_erpm_target < d->erpm_target) {
+        // Use different rates for deceleration based on throttle input
+		// dont think this accounts for hard braking to coasting
+        if (throttle_input == 0) {
+            // Throttle released - use original deceleration rate
+            erpm_change = erpm_change_normal;
+        }
+        d->erpm_target = fmaxf(d->erpm_target - erpm_change, throttle_erpm_target);
+    }
 }
+
 // void calculate_speed_target(data *d) {
 //     float throttle_input = 0;
 // 	float throttle_desired = 0;
