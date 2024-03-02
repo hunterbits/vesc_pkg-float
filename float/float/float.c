@@ -1646,34 +1646,36 @@ void calculate_speed_target(data *d) {
     }
 
     // Adjust these values as needed for desired responsiveness
-    float erpm_change_acceleration = 1.0;  // Increased value for faster acceleration
+    float erpm_change_acceleration = 0.02 * d->float_conf.booster_current;  // Increased value for faster acceleration
     float erpm_change_normal = 0.5;        // Original value for normal deceleration
-    float erpm_change_braking = 1.0;       // Increased value for faster braking
+    float erpm_change_braking = 0.03 * d->float_conf.booster_current;       // Increased value for faster braking
 
     throttle_erpm_target = throttle_input * 100 * 50;
     d->inputtilt_target = throttle_erpm_target;
 
-    float erpm_change = erpm_change_normal; // Default to normal deceleration rate
+    // Initially set to normal deceleration rate
+    float erpm_change = erpm_change_normal;
 
-    // Determine the adjustment based on throttle direction and magnitude
-    if (throttle_input > 0) {
-        // Accelerating
+    // Check if we are accelerating
+    if (throttle_erpm_target > d->erpm_target) {
         erpm_change = erpm_change_acceleration;
-    } else if (throttle_input < 0) {
-        // Actively braking
-        erpm_change = erpm_change_braking;
+    }
+    // Check if we are decelerating or braking
+    else if (throttle_erpm_target < d->erpm_target) {
+        // Determine if actively braking (throttle input negative) or just releasing throttle
+        if (throttle_input < 0) {
+            // Actively braking
+            erpm_change = erpm_change_braking;
+        } else {
+            // Releasing throttle, decelerate at the original (normal) rate
+            erpm_change = erpm_change_normal;
+        }
     }
 
-    // Adjust target ERPM
+    // Adjust the erpm_target based on the calculated change rate
     if (throttle_erpm_target > d->erpm_target) {
         d->erpm_target = fminf(d->erpm_target + erpm_change, throttle_erpm_target);
     } else if (throttle_erpm_target < d->erpm_target) {
-        // Use different rates for deceleration based on throttle input
-		// dont think this accounts for hard braking to coasting
-        if (throttle_input == 0) {
-            // Throttle released - use original deceleration rate
-            erpm_change = erpm_change_normal;
-        }
         d->erpm_target = fmaxf(d->erpm_target - erpm_change, throttle_erpm_target);
     }
 }
