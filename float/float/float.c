@@ -1266,9 +1266,12 @@ void calculate_speed_target(data *d) {
     }
 
     // Adjust these values as needed for desired responsiveness
-    float erpm_change_acceleration = 0.02 * d->float_conf.booster_current;  // Increased value for faster acceleration
+	// fuck
+    // float erpm_change_acceleration = 0.02 * d->float_conf.booster_current;  // Increased value for faster acceleration (enjoys 1 so far)
+    float erpm_change_acceleration = 0.02 * 4;
     float erpm_change_normal = 0.5;        // Original value for normal deceleration
-    float erpm_change_braking = 0.03 * d->float_conf.booster_current;       // Increased value for faster braking
+    // float erpm_change_braking = 0.03 * d->float_conf.booster_current;       // Increased value for faster braking (enjoys 1.5 so far)
+    float erpm_change_braking = 0.03 * 4;       // Increased value for faster braking (enjoys 1.5 so far)
 
     throttle_erpm_target = throttle_input * 100 * 50;
     d->inputtilt_target = throttle_erpm_target;
@@ -1641,6 +1644,7 @@ float apply_speedtilt(data *d) {
     prev_error_speed = error_speed;
 
 	// TODO tune max angle tilt
+	// set at 20degrees
 	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
 
 	d->speedtilt_target = speedtilt_target;
@@ -1872,12 +1876,19 @@ static void float_thd(void *arg) {
 		case (RUNNING_UPSIDEDOWN):
 		case (RUNNING_FLYWHEEL):
 			// Check for faults
+			// TODO: add check for wonky throttle states that cause constant acceleration and a break from the proper angle, caused by quick releases or fast changes in throttle input
 			if (check_faults(d)) {
 				if ((d->state == FAULT_SWITCH_FULL)) {
 					// dirty landings: add extra margin when rightside up
 					d->startup_pitch_tolerance = d->float_conf.startup_pitch_tolerance + d->startup_pitch_trickmargin;
 					d->fault_angle_pitch_timer = d->current_time;
 				}
+				break;
+			}
+
+			// if less than -18 debrees break;
+			if (d->pitch_angle < -18) {
+				brake(d);
 				break;
 			}
 			d->odometer_dirty = 1;			
