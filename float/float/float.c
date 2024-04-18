@@ -538,7 +538,7 @@ static void reset_vars(data *d) {
 	// Set values for startup
 	d->setpoint = d->pitch_angle;
 	d->setpoint_target_interpolated = d->pitch_angle;
-	d->setpoint_target = 0;
+	d->setpoint_target = -d->float_conf.booster_angle;
 	d->applied_booster_current = 0;
 	d->noseangling_interpolated = 0;
 	d->inputtilt_interpolated = 0;
@@ -858,7 +858,7 @@ static void calculate_setpoint_target(data *d) {
 				if (d->erpm >= 0){
 					d->setpointAdjustmentType = TILTBACK_NONE;
 					d->reverse_total_erpm = 0;
-					d->setpoint_target = 0;
+					d->setpoint_target = -d->float_conf.booster_angle;
 					d->pid_integral = 0;
 				}
 			}
@@ -973,7 +973,7 @@ static void calculate_setpoint_target(data *d) {
 		}
 		else {
 			d->setpointAdjustmentType = TILTBACK_NONE;
-			d->setpoint_target = 0;
+			d->setpoint_target = -d->float_conf.booster_angle;
 			d->state = RUNNING;
 		}
 	} else {
@@ -986,12 +986,12 @@ static void calculate_setpoint_target(data *d) {
 		else {
 			d->setpointAdjustmentType = TILTBACK_NONE;
 		}
-		d->setpoint_target = 0;
+		d->setpoint_target = -d->float_conf.booster_angle;
 		d->state = RUNNING;
 	}
 
 	if ((d->state == RUNNING_WHEELSLIP) && (d->abs_duty_cycle > d->max_duty_with_margin)) {
-		d->setpoint_target = 0;
+		d->setpoint_target = -d->float_conf.booster_angle;
 	}
 	if (d->is_flywheel_mode == false) {
 		if (d->setpointAdjustmentType == TILTBACK_DUTY) {
@@ -1887,7 +1887,7 @@ static void float_thd(void *arg) {
 			}
 
 			// if less than -18 debrees break;
-			if (d->pitch_angle < -18) {
+			if (d->pitch_angle < -15) {
 				brake(d);
 				break;
 			}
