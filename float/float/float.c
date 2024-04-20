@@ -1905,33 +1905,37 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-			calculate_setpoint_target(d);
-			calculate_setpoint_interpolated(d);
-			d->setpoint = d->setpoint_target_interpolated;
+			// calculate_setpoint_target(d);
+			// calculate_setpoint_interpolated(d);
+			// d->setpoint = d->setpoint_target_interpolated;
 
 
 			// what i added basiclly
-			calculate_speed_target(d);
-			apply_speedtilt(d);
-			apply_turntilt(d);
+			// calculate_speed_target(d);
+			// apply_speedtilt(d);
+			// apply_turntilt(d);
 
-			prepare_brake_scaling(d);
+			// prepare_brake_scaling(d);
 			// Do PID maths
-			d->proportional = d->setpoint - d->pitch_angle;
+			// d->proportional = d->setpoint - d->pitch_angle;
 
 
 
-			new_pid_value = calculate_pid_value(d);
+			float throttle_input = 0;
+			// Normalize throttle value to be within the expected range, say -1 to 1
+			if (fabsf(d->throttle_val) > 0.1) {  // Implementing a dead zone to ignore minor input noise
+				throttle_input = d->throttle_val;
+			}
 
-			// d->calculated_pid_value = new_pid_value;
+			// Directly map throttle input to motor current with a scale factor, example scale factor: 100
+			float motor_current_target = throttle_input * 100;
 
-			new_pid_value = limit_current(new_pid_value, d);
+			// Optionally, you can limit the motor current to prevent excessive current draw
+			motor_current_target = limit_current(motor_current_target, d);
+			// motor_current_target = limit_current(motor_current_target);
 
-			// d->current_limited_pid_value = new_pid_value;
-
-			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
-
-			set_current(d, d->pid_value);
+			// Set the current directly to the motor
+			set_current(d, motor_current_target);
 
 			break;
 
