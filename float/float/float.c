@@ -1887,7 +1887,7 @@ static void float_thd(void *arg) {
 			}
 
 			// if less than -18 debrees break;
-			if (d->pitch_angle < -15) {
+			if (d->pitch_angle < d->float_conf.booster_ramp) {
 				brake(d);
 				break;
 			}

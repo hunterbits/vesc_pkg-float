@@ -1285,7 +1285,7 @@ p, li { white-space: pre-wrap; }
             <vTx>7</vTx>
         </ki_limit>
         <booster_angle>
-            <longName>Start Angle</longName>
+            <longName>Start Angle tilt</longName>
             <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1300,7 +1300,7 @@ p, li { white-space: pre-wrap; }
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
             <maxDouble>15</maxDouble>
-            <minDouble>0</minDouble>
+            <minDouble>-15</minDouble>
             <showDisplay>0</showDisplay>
             <stepDouble>0.5</stepDouble>
             <valDouble>8</valDouble>
@@ -1309,7 +1309,7 @@ p, li { white-space: pre-wrap; }
             <vTx>7</vTx>
         </booster_angle>
         <booster_ramp>
-            <longName>Ramp Up</longName>
+            <longName>fault angle</longName>
             <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -1323,17 +1323,17 @@ p, li { white-space: pre-wrap; }
             <editorDecimalsDouble>1</editorDecimalsDouble>
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
-            <maxDouble>10</maxDouble>
-            <minDouble>1</minDouble>
+            <maxDouble>25</maxDouble>
+            <minDouble>-25</minDouble>
             <showDisplay>0</showDisplay>
             <stepDouble>0.5</stepDouble>
-            <valDouble>4</valDouble>
+            <valDouble>-15</valDouble>
             <vTxDoubleScale>100</vTxDoubleScale>
             <suffix> °</suffix>
             <vTx>7</vTx>
         </booster_ramp>
         <booster_current>
-            <longName>Current Boost</longName>
+            <longName>Current Boost throttle step</longName>
             <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;

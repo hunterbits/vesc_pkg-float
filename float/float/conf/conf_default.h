@@ -293,17 +293,17 @@
 #define APPCONF_FLOAT_KI_LIMIT 30
 #endif
 
-// Start Angle
+// Start Angle tilt
 #ifndef APPCONF_FLOAT_BOOSTER_ANGLE
 #define APPCONF_FLOAT_BOOSTER_ANGLE 8
 #endif
 
-// Ramp Up
+// fault angle
 #ifndef APPCONF_FLOAT_BOOSTER_RAMP
-#define APPCONF_FLOAT_BOOSTER_RAMP 4
+#define APPCONF_FLOAT_BOOSTER_RAMP -15
 #endif
 
-// Current Boost
+// Current Boost throttle step
 #ifndef APPCONF_FLOAT_BOOSTER_CURRENT
 #define APPCONF_FLOAT_BOOSTER_CURRENT 0
 #endif
