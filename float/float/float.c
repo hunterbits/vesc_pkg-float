@@ -726,7 +726,7 @@ static SwitchState check_adcs(data *d) {
 		beep_off(d, false);
 	}
 
-	return sw_state;
+	return ON;
 }
 
 // Fault checking order does not really matter. From a UX perspective, switch should be before angle.
@@ -1267,6 +1267,7 @@ void calculate_speed_target(data *d) {
 
     // Adjust these values as needed for desired responsiveness
 	// fuck
+	// currently at 50 so brake at 1.5 and 1 acceleration
     float erpm_change_acceleration = 0.02 * d->float_conf.booster_current;  // Increased value for faster acceleration (enjoys 1 so far)
     // float erpm_change_acceleration = 0.02 * 4;
     float erpm_change_normal = 0.5;        // Original value for normal deceleration
