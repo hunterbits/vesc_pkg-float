@@ -194,12 +194,10 @@ Item {
                 var applied_booster_current = dv.getFloat32(ind); ind += 4;
                 var motor_current = dv.getFloat32(ind); ind += 4;
                 var throttle_val = dv.getFloat32(ind); ind += 4;
-                var desired_current = dv.getFloat32(ind); ind += 4;
-                var current_step = dv.getFloat32(ind); ind += 4;
                 var erpm = dv.getFloat32(ind); ind += 4;
                 var erpm_target = dv.getFloat32(ind); ind += 4;
-                var peak_speed = dv.getFloat32(ind); ind += 4;
                 var inputtilt_target = dv.getFloat32(ind); ind += 4;
+                var speedtilt_target = dv.getFloat32(ind); ind += 4;
 
                 // var debug1 = dv.getFloat32(ind); ind += 4;
                 // var debug2 = dv.getFloat32(ind); ind += 4;
@@ -340,12 +338,10 @@ Item {
                     "Acc. Diff.          : " + float_acc_diff.toFixed(2) + "\n" +
                     "Booster Current     : " + applied_booster_current.toFixed(2) + "A\n" +
                     "Remote Input        : " + (throttle_val * 100).toFixed(0) + "%\n" +
-                    "Desirec Current     : " + desired_current.toFixed(2) + "%\n" +
-                    "Current Step        : " + current_step.toFixed(2) + "%\n" +
                     "ERPM                : " + erpm.toFixed(2) + "%\n" + 
                     "Target ERPM         : " + erpm_target.toFixed(2) + "\n" + 
-                    "PEAK SPEED         : " + peak_speed.toFixed(2) + "\n" + 
-                    "Coasting    : " + inputtilt_target + "\n"
+                    "ThottleERPMTarget   : " + inputtilt_target + "\n"
+                    "SpeedTiltTarget   : " + speedtilt_target + "\n"
 
                 if (beep_reason > 0) {
 		    debug.text += "Last Beep Reason    : " + beepString + "\n"

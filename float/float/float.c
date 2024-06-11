@@ -197,14 +197,9 @@ typedef struct {
 	float switch_warn_buzz_erpm;
 	float quickstop_erpm;
 	bool traction_control;
-	float desired_current;
-	float current_step;
 	float erpm_target;
-	float adjusted_setpoint;
+	// labeled Coasting, is actually throttle_erpm_target
 	float inputtilt_target;
-	float peak_speed;
-	float pitch_angle_target;
-	float pitch_angle_interpolated;
 	float speedtilt_target;
 	float speedtilt_interpolated;
 	float prev_pitch_angle;
@@ -538,7 +533,7 @@ static void reset_vars(data *d) {
 	// Set values for startup
 	d->setpoint = d->pitch_angle;
 	d->setpoint_target_interpolated = d->pitch_angle;
-	d->setpoint_target = -d->float_conf.booster_angle;
+	d->setpoint_target = d->float_conf.booster_angle;
 	d->applied_booster_current = 0;
 	d->noseangling_interpolated = 0;
 	d->inputtilt_interpolated = 0;
@@ -858,7 +853,7 @@ static void calculate_setpoint_target(data *d) {
 				if (d->erpm >= 0){
 					d->setpointAdjustmentType = TILTBACK_NONE;
 					d->reverse_total_erpm = 0;
-					d->setpoint_target = -d->float_conf.booster_angle;
+					d->setpoint_target = d->float_conf.booster_angle;
 					d->pid_integral = 0;
 				}
 			}
@@ -973,7 +968,7 @@ static void calculate_setpoint_target(data *d) {
 		}
 		else {
 			d->setpointAdjustmentType = TILTBACK_NONE;
-			d->setpoint_target = -d->float_conf.booster_angle;
+			d->setpoint_target = d->float_conf.booster_angle;
 			d->state = RUNNING;
 		}
 	} else {
@@ -986,12 +981,12 @@ static void calculate_setpoint_target(data *d) {
 		else {
 			d->setpointAdjustmentType = TILTBACK_NONE;
 		}
-		d->setpoint_target = -d->float_conf.booster_angle;
+		d->setpoint_target = d->float_conf.booster_angle;
 		d->state = RUNNING;
 	}
 
 	if ((d->state == RUNNING_WHEELSLIP) && (d->abs_duty_cycle > d->max_duty_with_margin)) {
-		d->setpoint_target = -d->float_conf.booster_angle;
+		d->setpoint_target = d->float_conf.booster_angle;
 	}
 	if (d->is_flywheel_mode == false) {
 		if (d->setpointAdjustmentType == TILTBACK_DUTY) {
@@ -1265,8 +1260,42 @@ void calculate_speed_target(data *d) {
         throttle_input = d->throttle_val;
     }
 
+	// fucks
+	// BOOSTER_ANGLE
+	// aka start angle tilt = booster_angle
+	//  sa = -12 starting angel negative is up
+	// booster angle is what i set setpoint to:  d->float_conf.booster_angle;
+	// flip signs throughout codebase so positive is up
+	
+	// BOOSTER_RAMP // FAULT ANGLE/ cutoff angle 
+	// stops wheelie with max controls 
+	// // if less than -18 debrees break;
+	// notes:
+	// should match sign and flow of start angle so positive number
+	// Current: 	// fault angle =-15 / booster ramp
+	// 	if (d->pitch_angle < d->float_conf.booster_ramp
+
+	// BOOSTER_CURRENT AND BRAKE_BOOSTER_CURRENT for tuning accel/decel
+	// currently at 50 so brake at 1.5 and 1 acceleration
+	// erpm_change_acceleration = d->float_conf.booster_current; = .02 * 50 =  1
+	// erpm_change_braking = d->float_conf.brkbooster_current; .03 * 50 = 1.5
+	
+	// INPUTTILT_ANGLE_LIMIT
+	//  max angle throttle = // set at 20degrees
+	// float speedtilt_target = -d->float_conf.inputtilt_angle_limit = 20
+	// notes: reversed sign to positive, need to tune at new frame set
+	// originally had same inverse sign as booster_angle/booster_ramp, defaults couldnt go less than 0 so prolly presented as -20 (guess)
+
+	// Could look in to: d->float_conf.ki
+
+	// so booster angle, booster ramp and inputtilt angle limit all had -, so inverting all 3 should work, look to ThottleERPMTarget and Speedtilttarget for debug
+	
+
+	
+	
+
+	
     // Adjust these values as needed for desired responsiveness
-	// fuck
 	// currently at 50 so brake at 1.5 and 1 acceleration
     float erpm_change_acceleration = 0.02 * d->float_conf.booster_current;  // Increased value for faster acceleration (enjoys 1 so far)
     // float erpm_change_acceleration = 0.02 * 4;
@@ -1645,8 +1674,8 @@ float apply_speedtilt(data *d) {
     prev_error_speed = error_speed;
 
 	// TODO tune max angle tilt
-	// set at 20degrees
-	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
+	// set at 20degrees/ retune with new frame
+	float speedtilt_target = d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
 
 	d->speedtilt_target = speedtilt_target;
 
@@ -1662,6 +1691,8 @@ float apply_speedtilt(data *d) {
 
 	// dynamic setpoint adjustment 
 	// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
+	// ^not sure what referring to here look in to
+	// think this has to do with turning actually so the board when turning the nose comes up
 	float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
 	d->prev_pitch_angle = d->pitch_angle;
 
@@ -1887,8 +1918,8 @@ static void float_thd(void *arg) {
 				break;
 			}
 
-			// if less than -18 debrees break;
-			if (d->pitch_angle < d->float_conf.booster_ramp) {
+			// if greater than 18 debrees break;
+			if (d->pitch_angle > d->float_conf.booster_ramp) {
 				brake(d);
 				break;
 			}
@@ -2196,12 +2227,10 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->applied_booster_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->motor_current, &ind);
 	buffer_append_float32_auto(send_buffer, d->throttle_val, &ind);
-	buffer_append_float32_auto(send_buffer, d->desired_current, &ind);
-	buffer_append_float32_auto(send_buffer, d->current_step, &ind);
 	buffer_append_float32_auto(send_buffer, d->erpm, &ind);
 	buffer_append_float32_auto(send_buffer, d->erpm_target, &ind);
-	buffer_append_float32_auto(send_buffer, d->peak_speed, &ind);
 	buffer_append_float32_auto(send_buffer, d->inputtilt_target, &ind);
+	buffer_append_float32_auto(send_buffer, d->speedtilt_target, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");
