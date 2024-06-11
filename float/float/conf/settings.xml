@@ -945,7 +945,7 @@ p, li { white-space: pre-wrap; }
             <enumNames>PPM</enumNames>
         </inputtilt_remote_type>
         <inputtilt_angle_limit>
-            <longName>Tiltback Angle Limit</longName>
+            <longName>Tiltback Angle Limit aka SpeedTilt Target</longName>
             <type>1</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
@@ -962,7 +962,7 @@ p, li { white-space: pre-wrap; }
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
             <maxDouble>90</maxDouble>
-            <minDouble>0</minDouble>
+            <minDouble>-90</minDouble>
             <showDisplay>0</showDisplay>
             <stepDouble>1</stepDouble>
             <valDouble>10</valDouble>
