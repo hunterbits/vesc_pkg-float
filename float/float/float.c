@@ -172,8 +172,8 @@ typedef struct {
 	// Rumtime state values
 	FloatState state;
 	float proportional;
-	float calculated_pid_value;
-	float current_limited_pid_value;
+	// float calculated_pid_value;
+	// float current_limited_pid_value;
 	float pid_prop, pid_integral, pid_rate, pid_mod;
 	float last_proportional, abs_proportional;
 	float pid_value;
@@ -1915,11 +1915,11 @@ static void float_thd(void *arg) {
 
 			new_pid_value = calculate_pid_value(d);
 
-			d->calculated_pid_value = new_pid_value;
+			// d->calculated_pid_value = new_pid_value;
 
 			new_pid_value = limit_current(new_pid_value, d);
 
-			d->current_limited_pid_value = new_pid_value;
+			// d->current_limited_pid_value = new_pid_value;
 
 			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 
@@ -2212,15 +2212,31 @@ static void send_realtime_data(data *d){
 	// cock
 	buffer_append_float32_auto(send_buffer, d->pid_integral, &ind);
 	buffer_append_float32_auto(send_buffer, d->proportional, &ind);
-	buffer_append_float32_auto(send_buffer, d->setpointAdjustmentType, &ind);
+	// buffer_append_float32_auto(send_buffer, d->setpointAdjustmentType, &ind);
 	buffer_append_float32_auto(send_buffer, d->pid_prop, &ind);
-	buffer_append_float32_auto(send_buffer, d->braking, &ind);
 	buffer_append_float32_auto(send_buffer, d->mc_current_min, &ind);
-	buffer_append_float32_auto(send_buffer, d->mc_current_max, &ind);
-	buffer_append_float32_auto(send_buffer, d->torqueresponse_interpolated, &ind);
-	buffer_append_float32_auto(send_buffer, d->calculated_pid_value, &ind);
-	buffer_append_float32_auto(send_buffer, d->current_limited_pid_value, &ind);
+	// buffer_append_float32_auto(send_buffer, d->mc_current_max, &ind);
+	// buffer_append_float32_auto(send_buffer, d->torqueresponse_interpolated, &ind);
+	// buffer_append_float32_auto(send_buffer, d->calculated_pid_value, &ind);
+	// buffer_append_float32_auto(send_buffer, d->current_limited_pid_value, &ind);
 
+                    // " proportional      : " + proportional.toFixed(2) + "\n" +
+                    // " setpointAdjustmentType : " + setpointAdjustmentType.toFixed(2) + "\n" +
+                    // " pid_prop          : " + pid_prop.toFixed(2) + "\n" +
+                    // " mc_current_min    : " + mc_current_min.toFixed(2) + "\n" +
+                    // " mc_current_max    : " + mc_current_max.toFixed(2) + "\n" +
+                    // " torqueresponse_interpolated : " + torqueresponse_interpolated.toFixed(2) + "\n" +
+                    // " calculated_pid_value        : " + calculated_pid_value.toFixed(2) + "\n" +
+                    // " current_limited_pid_value   : " + current_limited_pid_value.toFixed(2) + "\n"
+				// 	                var proportional = dv.getFloat32(ind); ind += 4;
+                // var setpointAdjustmentType = dv.getFloat32(ind); ind += 4;
+                // var pid_prop = dv.getFloat32(ind); ind += 4;
+                // var braking = dv.getFloat32(ind); ind += 4;
+                // var mc_current_min = dv.getFloat32(ind); ind += 4;
+                // var mc_current_max = dv.getFloat32(ind); ind += 4;
+                // var torqueresponse_interpolated = dv.getFloat32(ind); ind += 4;
+                // var calculated_pid_value = dv.getFloat32(ind); ind += 4;
+                // var current_limited_pid_value = dv.getFloat32(ind); ind += 4;
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");
 	}
