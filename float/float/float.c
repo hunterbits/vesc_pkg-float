@@ -172,6 +172,8 @@ typedef struct {
 	// Rumtime state values
 	FloatState state;
 	float proportional;
+	float calculated_pid_value;
+	float current_limited_pid_value;
 	float pid_prop, pid_integral, pid_rate, pid_mod;
 	float last_proportional, abs_proportional;
 	float pid_value;
@@ -1199,6 +1201,7 @@ void prepare_brake_scaling(data *d) {
 
 float calculate_pid_value(data *d) {
     // Resume real PID maths
+	// d->proportional = d->setpoint - d->pitch_angle;
     d->pid_integral = d->pid_integral + d->proportional * d->float_conf.ki;
 
     // Apply I term Filter
@@ -1912,7 +1915,11 @@ static void float_thd(void *arg) {
 
 			new_pid_value = calculate_pid_value(d);
 
+			d->calculated_pid_value = new_pid_value;
+
 			new_pid_value = limit_current(new_pid_value, d);
+
+			d->current_limited_pid_value = new_pid_value;
 
 			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 
@@ -2202,6 +2209,17 @@ static void send_realtime_data(data *d){
 	buffer_append_float32_auto(send_buffer, d->erpm_target, &ind);
 	buffer_append_float32_auto(send_buffer, d->peak_speed, &ind);
 	buffer_append_float32_auto(send_buffer, d->inputtilt_target, &ind);
+	// cock
+	buffer_append_float32_auto(send_buffer, d->pid_integral, &ind);
+	buffer_append_float32_auto(send_buffer, d->proportional, &ind);
+	buffer_append_float32_auto(send_buffer, d->setpointAdjustmentType, &ind);
+	buffer_append_float32_auto(send_buffer, d->pid_prop, &ind);
+	buffer_append_float32_auto(send_buffer, d->braking, &ind);
+	buffer_append_float32_auto(send_buffer, d->mc_current_min, &ind);
+	buffer_append_float32_auto(send_buffer, d->mc_current_max, &ind);
+	buffer_append_float32_auto(send_buffer, d->torqueresponse_interpolated, &ind);
+	buffer_append_float32_auto(send_buffer, d->calculated_pid_value, &ind);
+	buffer_append_float32_auto(send_buffer, d->current_limited_pid_value, &ind);
 
 	if (ind > BUFSIZE) {
 		VESC_IF->printf("BUFSIZE too small...\n");

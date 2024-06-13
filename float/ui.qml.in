@@ -200,6 +200,17 @@ Item {
                 var erpm_target = dv.getFloat32(ind); ind += 4;
                 var peak_speed = dv.getFloat32(ind); ind += 4;
                 var inputtilt_target = dv.getFloat32(ind); ind += 4;
+                var pid_integral = dv.getFloat32(ind); ind += 4;
+                var proportional = dv.getFloat32(ind); ind += 4;
+                var setpointAdjustmentType = dv.getFloat32(ind); ind += 4;
+                var pid_prop = dv.getFloat32(ind); ind += 4;
+                var braking = dv.getFloat32(ind); ind += 4;
+                var mc_current_min = dv.getFloat32(ind); ind += 4;
+                var mc_current_max = dv.getFloat32(ind); ind += 4;
+                var torqueresponse_interpolated = dv.getFloat32(ind); ind += 4;
+                var calculated_pid_value = dv.getFloat32(ind); ind += 4;
+                var current_limited_pid_value = dv.getFloat32(ind); ind += 4;
+                
 
                 // var debug1 = dv.getFloat32(ind); ind += 4;
                 // var debug2 = dv.getFloat32(ind); ind += 4;
@@ -320,7 +331,7 @@ Item {
                     "Switch              : " + switchString + "\n"
 
                 rt_data.text =
-                    "Current (Requested) : " + pid_value.toFixed(2) + "A\n" +
+                    "Current (Requested) pid_value : " + pid_value.toFixed(2) + "A\n" +
                     "Current (Motor)     : " + motor_current.toFixed(2) + "A\n" +
                     "Pitch               : " + pitch.toFixed(2) + "°\n" +
                     "Roll                : " + roll.toFixed(2) + "°\n" +
@@ -345,7 +356,18 @@ Item {
                     "ERPM                : " + erpm.toFixed(2) + "%\n" + 
                     "Target ERPM         : " + erpm_target.toFixed(2) + "\n" + 
                     "PEAK SPEED         : " + peak_speed.toFixed(2) + "\n" + 
-                    "Coasting    : " + inputtilt_target + "\n"
+                    "Coasting           : " + inputtilt_target + "\n" + 
+                    " pid_integral      : " + pid_integral + "\n" +
+                    " proportional      : " + proportional + "\n" +
+                    " setpointAdjustmentType : " + setpointAdjustmentType + "\n" +
+                    " pid_prop          : " + pid_prop + "\n" +
+                    " braking           : " + braking + "\n" +
+                    " mc_current_min    : " + mc_current_min + "\n" +
+                    " mc_current_max    : " + mc_current_max + "\n" +
+                    " torqueresponse_interpolated : " + torqueresponse_interpolated + "\n" +
+                    " calculated_pid_value        : " + calculated_pid_value + "\n" +
+                    " current_limited_pid_value   : " + current_limited_pid_value + "\n"
+                    
 
                 if (beep_reason > 0) {
 		    debug.text += "Last Beep Reason    : " + beepString + "\n"
