@@ -1645,7 +1645,7 @@ float apply_speedtilt(data *d) {
     prev_error_speed = error_speed;
 
 	// TODO tune max angle tilt
-	// set at 20degrees
+	// set at 20degrees in settings so equals -20 here
 	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
 
 	d->speedtilt_target = speedtilt_target;
@@ -1887,8 +1887,8 @@ static void float_thd(void *arg) {
 				break;
 			}
 
-			// if less than -18 debrees break;
-			if (d->pitch_angle < d->float_conf.booster_ramp) {
+			// if less than -18 debrees break; in current config since riding backwards switch to > +positive 22
+			if (d->pitch_angle > d->float_conf.booster_ramp) {
 				brake(d);
 				break;
 			}
