@@ -213,9 +213,9 @@
 #define APPCONF_FLOAT_INPUTTILT_REMOTE_TYPE 0
 #endif
 
-// Tiltback Angle Limit/ max speed tilt
+// Tiltback Angle Limit aka SpeedTilt Target
 #ifndef APPCONF_FLOAT_INPUTTILT_ANGLE_LIMIT
-#define APPCONF_FLOAT_INPUTTILT_ANGLE_LIMIT 20
+#define APPCONF_FLOAT_INPUTTILT_ANGLE_LIMIT 10
 #endif
 
 // Tiltback Speed
@@ -300,7 +300,7 @@
 
 // fault angle
 #ifndef APPCONF_FLOAT_BOOSTER_RAMP
-#define APPCONF_FLOAT_BOOSTER_RAMP 18
+#define APPCONF_FLOAT_BOOSTER_RAMP -15
 #endif
 
 // Current Boost throttle step
