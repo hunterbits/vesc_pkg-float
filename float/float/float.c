@@ -1264,8 +1264,15 @@ void calculate_speed_target(data *d) {
     float throttle_input = 0;
     float throttle_erpm_target = 0;
     // Ignore remote noise
-    if (fabsf(d->throttle_val) > 0.1) {
-        throttle_input = d->throttle_val;
+	float throttle_percent = (d->adc1 - 0.87) / 2.43;
+	d->throttle_val = throttle_percent;
+	float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
+	// add both throttles and take value from -3.3 to +3.3
+	
+	float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
+	// .87 volts min so .87/3.3
+    if (fabsf(cumuluative_throttle) > 0.05) {
+        throttle_input = cumuluative_throttle;
     }
 
     // Adjust these values as needed for desired responsiveness
@@ -1277,6 +1284,7 @@ void calculate_speed_target(data *d) {
     float erpm_change_braking = 0.03 * d->float_conf.brkbooster_current;       // Increased value for faster braking (enjoys 1.5 so far)
     // float erpm_change_braking = 0.03 * 4;       // Increased value for faster braking (enjoys 1.5 so far)
 
+	// TOP SPEED
     throttle_erpm_target = throttle_input * 100 * 50;
     d->inputtilt_target = throttle_erpm_target;
 
