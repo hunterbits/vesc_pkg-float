@@ -349,7 +349,7 @@ Item {
                     "Current Step        : " + current_step.toFixed(2) + "%\n" +
                     "ERPM                : " + erpm.toFixed(2) + "%\n" + 
                     "Target ERPM         : " + erpm_target.toFixed(2) + "\n" + 
-                    "brake2         : " + peak_speed.toFixed(2) + "\n" + 
+                    "PEAK SPEED         : " + peak_speed.toFixed(2) + "\n" + 
                     "Coasting           : " + inputtilt_target + "\n" + 
                     "pid integral           : " + pid_integral + "\n" +
                     "proportional          : " + proportional + "\n" +
