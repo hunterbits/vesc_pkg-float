@@ -1921,11 +1921,24 @@ static void float_thd(void *arg) {
 
 
 
+			// float throttle_input = 0;
+			// // Normalize throttle value to be within the expected range, say -1 to 1
+			// if (fabsf(d->throttle_val) > 0.1) {  // Implementing a dead zone to ignore minor input noise
+			// 	throttle_input = d->throttle_val;
+			// }
 			float throttle_input = 0;
-			// Normalize throttle value to be within the expected range, say -1 to 1
-			if (fabsf(d->throttle_val) > 0.1) {  // Implementing a dead zone to ignore minor input noise
-				throttle_input = d->throttle_val;
+			float throttle_percent = (d->adc1 - 0.87) / 2.43;
+			float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
+			// add both throttles and take value from -3.3 to +3.3
+			
+			float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
+			d->throttle_val = cumuluative_throttle;
+			// .87 volts min so .87/3.3
+			if (fabsf(cumuluative_throttle) > 0.05) {
+				throttle_input = cumuluative_throttle;
 			}
+
+			
 
 			// Directly map throttle input to motor current with a scale factor, example scale factor: 100
 			float motor_current_target = throttle_input * 100;
