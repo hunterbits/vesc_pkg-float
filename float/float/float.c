@@ -1931,14 +1931,12 @@ static void float_thd(void *arg) {
 			float throttle_percent_adc2_brake = (d->adc2 - 0.82) / 3.3;
 			d->peak_speed = throttle_percent_adc2_brake;
 			if(throttle_percent_adc2_brake > 0.05) {
-				new_pid_value = throttle_percent_adc2_brake * -d->mc_current_min;
-				d->in_da_loop = 1;
+				new_pid_value = throttle_percent_adc2_brake * -d->float_conf.brkbooster_angle;
 				new_pid_value = limit_current(new_pid_value, d);
-				d->pid_value = new_pid_value;
-			} else {
-				d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
+				d->in_da_loop = new_pid_value;
 			}
 
+			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
 
 			// d->current_limited_pid_value = new_pid_value;
 
