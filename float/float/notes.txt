@@ -1,0 +1,3 @@
+braking leans you back right now, not terrible but needs to stop more, needs to reduce speed proportional to the amount the brake is squeezed, so start rotating the wheel in reverse,
+so maybe just negative amperage at a reasonable level
+pure break feels reasonable but it throws you forward how to balance braking/tiltback with stopping?

@@ -1905,33 +1905,50 @@ static void float_thd(void *arg) {
 			}
 			d->odometer_dirty = 1;			
 			d->disengage_timer = d->current_time;
-			calculate_setpoint_target(d);
-			calculate_setpoint_interpolated(d);
-			d->setpoint = d->setpoint_target_interpolated;
+			// calculate_setpoint_target(d);
+			// calculate_setpoint_interpolated(d);
+			// d->setpoint = d->setpoint_target_interpolated;
 
 
 			// what i added basiclly
-			calculate_speed_target(d);
-			apply_speedtilt(d);
-			apply_turntilt(d);
+			// calculate_speed_target(d);
+			// apply_speedtilt(d);
+			// apply_turntilt(d);
 
-			prepare_brake_scaling(d);
+			// prepare_brake_scaling(d);
 			// Do PID maths
-			d->proportional = d->setpoint - d->pitch_angle;
+			// d->proportional = d->setpoint - d->pitch_angle;
 
 
 
-			new_pid_value = calculate_pid_value(d);
+			// float throttle_input = 0;
+			// // Normalize throttle value to be within the expected range, say -1 to 1
+			// if (fabsf(d->throttle_val) > 0.1) {  // Implementing a dead zone to ignore minor input noise
+			// 	throttle_input = d->throttle_val;
+			// }
+			float throttle_input = 0;
+			float throttle_percent = (d->adc1 - 0.87) / 2.43;
+			float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
+			// add both throttles and take value from -3.3 to +3.3
+			
+			float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
+			d->throttle_val = cumuluative_throttle;
+			// .87 volts min so .87/3.3
+			if (fabsf(cumuluative_throttle) > 0.05) {
+				throttle_input = cumuluative_throttle;
+			}
 
-			// d->calculated_pid_value = new_pid_value;
+			
 
-			new_pid_value = limit_current(new_pid_value, d);
+			// Directly map throttle input to motor current with a scale factor, example scale factor: 100
+			float motor_current_target = throttle_input * 100;
 
-			// d->current_limited_pid_value = new_pid_value;
+			// Optionally, you can limit the motor current to prevent excessive current draw
+			motor_current_target = limit_current(motor_current_target, d);
+			// motor_current_target = limit_current(motor_current_target);
 
-			d->pid_value = d->pid_value * 0.8 + new_pid_value * 0.2;
-
-			set_current(d, d->pid_value);
+			// Set the current directly to the motor
+			set_current(d, motor_current_target);
 
 			break;
 
