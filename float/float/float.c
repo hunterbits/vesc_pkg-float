@@ -1266,10 +1266,11 @@ void calculate_speed_target(data *d) {
     // Ignore remote noise
 	float throttle_percent = (d->adc1 - 0.87) / 2.43;
 	d->throttle_val = throttle_percent;
-	float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
+	// float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
 	// add both throttles and take value from -3.3 to +3.3
 	
-	float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
+	// float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
+	float cumuluative_throttle = throttle_percent;
 	// .87 volts min so .87/3.3
     if (fabsf(cumuluative_throttle) > 0.05) {
         throttle_input = cumuluative_throttle;
@@ -1631,76 +1632,89 @@ void calculate_speed_target(data *d) {
 
 float apply_speedtilt(data *d) {
     // Placeholder: PID constants for speed control
-	// ~3 secs to max wigth 832 hertz
-	// will need to ramp up or no? the target tilt should be smoothed by stepsize?
     float Kp_speed = 1;
-    // float Ki_speed = 0.0;
-    // float Kd_speed = 0.0;
 
     // Static variable to hold the previous error and integral for speed control
     static float prev_error_speed = 0;
-    // static float integral_speed = 0;
 
     // Calculate the error for speed control
     float error_speed = d->erpm_target - d->erpm;
 
-    // Calculate the integral and derivative for speed control
-    // integral_speed += error_speed;
-    // float derivative_speed = error_speed - prev_error_speed;
-
     // Calculate the adjusted setpoint for the balance PID
     float speed_pid = Kp_speed * error_speed;
-	//  + Ki_speed * integral_speed + Kd_speed * derivative_speed;
 
     // Save the current error for the next iteration
     prev_error_speed = error_speed;
 
-	// TODO tune max angle tilt
-	// set at 20degrees in settings so equals -20 here
-	float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
+    // Dynamic braking condition based on brake signal percentage
+	// fuck
+	float throttle_percent_adc2_brake = (d->adc2 - 0.87) / 3.3;
+    if (throttle_percent_adc2_brake > 0) {
+        // Proportional reduction of speed setpoint based on brake signal
+        float brake_strength = throttle_percent_adc2_brake;  // Range 0 to 1
+        float max_deceleration = 10.0;  // Tune this for desired deceleration speed
+        d->erpm_target = fmaxf(d->erpm_target - brake_strength * max_deceleration, 0);
 
-	d->speedtilt_target = speedtilt_target;
+        // Proportional tilt adjustment based on brake signal
+        float max_brake_tilt = 15.0;  // Max tilt angle during full brake
+        d->speedtilt_target = -max_brake_tilt * brake_strength;
+    } else {
+        // Normal speed tilt calculation when no brake is applied
+        float speedtilt_target = -d->float_conf.inputtilt_angle_limit * (speed_pid / (100 * 10)); 
+        d->speedtilt_target = speedtilt_target;
+    }
 
-	float speed_tiltback_target_diff = speedtilt_target - d->speedtilt_interpolated;
+    // Smooth tilt adjustment
+    float speed_tiltback_target_diff = d->speedtilt_target - d->speedtilt_interpolated;
 
-	if (fabsf(speed_tiltback_target_diff) < d->inputtilt_step_size){
-		d->speedtilt_interpolated = speedtilt_target;
-	} else {
-		d->speedtilt_interpolated += d->inputtilt_step_size * SIGN(speed_tiltback_target_diff);
-	}
+    if (fabsf(speed_tiltback_target_diff) < d->inputtilt_step_size) {
+        d->speedtilt_interpolated = d->speedtilt_target;
+    } else {
+        d->speedtilt_interpolated += d->inputtilt_step_size * SIGN(speed_tiltback_target_diff);
+    }
 
-	d->setpoint += d->speedtilt_interpolated;
+    d->setpoint += d->speedtilt_interpolated;
 
-	// dynamic setpoint adjustment 
-	// dampen this or take in account desired speed tilt so the dynamic tilt allows for increasing velocity
-	float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
-	d->prev_pitch_angle = d->pitch_angle;
+    // Dynamic setpoint adjustment based on pitch and brake signal
+    float rate_of_change_of_pitch = d->pitch_angle - d->prev_pitch_angle;
+    d->prev_pitch_angle = d->pitch_angle;
 
-	// Threshold to detect user's leaning
-	float lean_threshold = 0.1;
+    // Threshold to detect user's leaning
+    float lean_threshold = 0.1;
 
-	// Adjustment factors
-    float speedtilt_weight = 0.5;  // You can tune this
-    float dynamic_tilt_weight = 1 - speedtilt_weight;  // You can tune this
+    // Adjustment factors
+    float speedtilt_weight = 0.5;
+    float dynamic_tilt_weight = 1 - speedtilt_weight;
 
-    // Conditional dynamic adjustment
+    // Conditional dynamic adjustment with reduced pitch sensitivity during braking
+    if (throttle_percent_adc2_brake > 0) {
+        lean_threshold *= 2;  // Less sensitive to pitch changes during braking
+        dynamic_tilt_weight = 0.3;  // Tilt adjustments are less aggressive during braking
+    }
+
     if (rate_of_change_of_pitch < -lean_threshold) {
         float dynamic_adjustment = -rate_of_change_of_pitch;
         d->setpoint += dynamic_adjustment * dynamic_tilt_weight;
 
-        // Reduce speed tilt contribution
+        // Reduce speed tilt contribution during lean
         d->setpoint -= d->speedtilt_interpolated * (1 - speedtilt_weight);
     } else if (rate_of_change_of_pitch > lean_threshold) {
         float dynamic_adjustment = rate_of_change_of_pitch;
         d->setpoint -= dynamic_adjustment * dynamic_tilt_weight;
 
-        // Reduce speed tilt contribution
+        // Reduce speed tilt contribution during lean
         d->setpoint -= d->speedtilt_interpolated * (1 - speedtilt_weight);
     } else {
         // When the user is not leaning, simply add the speed tilt
         d->setpoint += d->speedtilt_interpolated * speedtilt_weight;
     }
+
+    // Additional braking setpoint adjustment to safely reduce speed
+    if (throttle_percent_adc2_brake > 0) {
+        d->setpoint *= 0.95;  // Gradually bring the setpoint closer to neutral
+    }
 }
+
 
 static void float_thd(void *arg) {
 	data *d = (data*)arg;
