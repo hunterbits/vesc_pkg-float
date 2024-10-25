@@ -1264,16 +1264,47 @@ void calculate_speed_target(data *d) {
     float throttle_input = 0;
     float throttle_erpm_target = 0;
     // Ignore remote noise
-	float throttle_percent = (d->adc1 - 0.87) / 2.43;
-	d->throttle_val = throttle_percent;
-	float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
-	// add both throttles and take value from -3.3 to +3.3
+	// float throttle_percent = (d->adc1 - 0.87) / 2.43;
+	// d->throttle_val = throttle_percent;
+	// float throttle_percent_adc2_brake = -1 * (d->adc2 - 0.87) / 3.3;
+	// // add both throttles and take value from -3.3 to +3.3
 	
-	float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
-	// .87 volts min so .87/3.3
-    if (fabsf(cumuluative_throttle) > 0.05) {
-        throttle_input = cumuluative_throttle;
+	// float cumuluative_throttle = throttle_percent_adc2_brake + throttle_percent;
+	// // .87 volts min so .87/3.3
+    // if (fabsf(cumuluative_throttle) > 0.05) {
+    //     throttle_input = cumuluative_throttle;
+    // }
+
+	// New ADC1 mapping
+    // 2.26V is no throttle (center)
+    // 0.83V is 100% brake
+    // 3.3V is 100% acceleration
+    
+    float center_voltage = 2.26;
+    float brake_voltage = 0.83;
+    float accel_voltage = 3.3;
+    
+    // Calculate throttle percentage
+    if (d->adc1 < center_voltage) {
+        // Braking zone
+        throttle_input = (d->adc1 - center_voltage) / (brake_voltage - center_voltage) * -1;
+    } else if (d->adc1 > center_voltage) {
+        // Acceleration zone
+        throttle_input = (d->adc1 - center_voltage) / (accel_voltage - center_voltage);
     }
+    
+    // Clamp throttle input between -1 and 1
+    throttle_input = fmaxf(-1.0f, fminf(1.0f, throttle_input));
+
+	// Throttle is bit noisy
+	if (fabsf(throttle_input) < 0.04) {
+		throttle_input = 0;
+	}
+    
+    // Store the throttle value for debugging or other uses
+    d->throttle_val = throttle_input;
+	// TODO use adc2 as a brake bias
+
 
     // Adjust these values as needed for desired responsiveness
 	// fuck
@@ -3179,3 +3210,4 @@ INIT_FUN(lib_info *info) {
 
 	return true;
 }
+
